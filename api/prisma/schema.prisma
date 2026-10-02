@@ -1,0 +1,275 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  STORE_MANAGER
+  DISPATCHER
+  LOADER
+  DRIVER
+}
+
+enum DockType {
+  REAR_DOCK
+  CURB
+  MALL_BAY
+}
+
+enum ParkingConstraint {
+  NONE
+  VAN_ONLY
+}
+
+enum VehicleType {
+  TRUCK
+  VAN
+}
+
+enum TemperatureType {
+  REEFER
+  AMBIENT
+}
+
+// Goods requirement (orders) — NOT the same as vehicle capability.
+// Rule: CHILLED/FROZEN ⇒ REEFER vehicle; AMBIENT ⇒ any vehicle.
+enum TempRequirement {
+  CHILLED
+  FROZEN
+  AMBIENT
+}
+
+enum OrderStatus {
+  NEW
+  CONFIRMED
+  PLANNED
+  LOADING
+  IN_TRANSIT
+  DELIVERED
+  DEFERRED
+  AT_RISK
+}
+
+enum TripStatus {
+  PLANNED
+  RELEASED
+  LOADING
+  READY
+  IN_TRANSIT
+  COMPLETED
+}
+
+enum StopStatus {
+  PENDING
+  ARRIVED
+  COMPLETED
+  ISSUE
+}
+
+// ─── Core Entities ────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         Role
+  name         String
+  depot        String?
+  outletId     String?  @map("outlet_id")
+  phone        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  orders        Order[]
+  deferrals     Deferral[]
+  loadingEvents LoadingEvent[]
+
+  @@map("users")
+}
+
+model Outlet {
+  id                String            @id @default(uuid())
+  name              String
+  brand             String
+  district          String
+  depot             String
+  dockType          DockType          @map("dock_type")
+  parkingConstraint ParkingConstraint @default(NONE) @map("parking_constraint")
+  mallWindowOpen    String?           @map("mall_window_open")
+  mallWindowClose   String?           @map("mall_window_close")
+  windowOpen        String            @map("window_open")
+  windowClose       String            @map("window_close")
+  createdAt         DateTime          @default(now()) @map("created_at")
+
+  orders    Order[]
+  tripStops TripStop[]
+
+  @@map("outlets")
+}
+
+model Vehicle {
+  id               String          @id @default(uuid())
+  registrationNo   String          @unique @map("registration_no")
+  type             VehicleType
+  temperatureType  TemperatureType @map("temperature_type")
+  maxWeightKg      Float           @map("max_weight_kg")
+  maxVolumeM3      Float           @map("max_volume_m3")
+  fuelType         String          @map("fuel_type")
+  kmPerL           Float           @map("km_per_l")
+  weeklyFuelQuotaL Float           @map("weekly_fuel_quota_l")
+  depot            String
+  active           Boolean         @default(true)
+
+  trips Trip[]
+
+  @@map("vehicles")
+}
+
+model Order {
+  id                     String          @id @default(uuid())
+  outletId               String          @map("outlet_id")
+  brand                  String
+  district               String
+  depot                  String
+  temperatureRequirement TempRequirement @map("temperature_requirement")
+  units                  Int
+  weightKg               Float           @map("weight_kg")
+  volumeM3               Float           @map("volume_m3")
+  windowOpen             String          @map("window_open")
+  windowClose            String          @map("window_close")
+  deliveryDate           DateTime        @map("delivery_date")
+  status                 OrderStatus     @default(NEW)
+  createdBy              String          @map("created_by")
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
+
+  outlet        Outlet         @relation(fields: [outletId], references: [id])
+  creator       User           @relation(fields: [createdBy], references: [id])
+  tripStops     TripStop[]
+  deferrals     Deferral[]
+  loadingEvents LoadingEvent[]
+
+  @@map("orders")
+}
+
+model Trip {
+  id               String     @id @default(uuid())
+  vehicleId        String     @map("vehicle_id")
+  tripNumber       Int        @map("trip_number") // 1 or 2 — max two trips per vehicle per day
+  date             DateTime
+  brand            String
+  district         String
+  status           TripStatus @default(PLANNED)
+  plannedDeparture DateTime?  @map("planned_departure")
+  createdAt        DateTime   @default(now()) @map("created_at")
+
+  vehicle       Vehicle        @relation(fields: [vehicleId], references: [id])
+  stops         TripStop[]
+  loadingEvents LoadingEvent[]
+
+  @@unique([vehicleId, date, tripNumber])
+  @@map("trips")
+}
+
+model TripStop {
+  id             String     @id @default(uuid())
+  tripId         String     @map("trip_id")
+  orderId        String     @map("order_id")
+  outletId       String     @map("outlet_id")
+  sequence       Int
+  plannedArrival DateTime?  @map("planned_arrival")
+  actualArrival  DateTime?  @map("actual_arrival")
+  arrivedAt      DateTime?  @map("arrived_at")
+  leftAt         DateTime?  @map("left_at")
+  status         StopStatus @default(PENDING)
+
+  trip            Trip             @relation(fields: [tripId], references: [id])
+  order           Order            @relation(fields: [orderId], references: [id])
+  outlet          Outlet           @relation(fields: [outletId], references: [id])
+  proofOfDelivery ProofOfDelivery?
+
+  @@map("trip_stops")
+}
+
+model ProofOfDelivery {
+  id            String   @id @default(uuid())
+  stopId        String   @unique @map("stop_id")
+  receiverName  String   @map("receiver_name")
+  signatureNote String   @map("signature_note")
+  photoUrl      String?  @map("photo_url")
+  recordedAt    DateTime @map("recorded_at")
+  synced        Boolean  @default(true)
+
+  stop TripStop @relation(fields: [stopId], references: [id])
+
+  @@map("proof_of_delivery")
+}
+
+model Deferral {
+  id        String   @id @default(uuid())
+  orderId   String   @map("order_id")
+  reason    String
+  decidedBy String   @map("decided_by")
+  decidedAt DateTime @map("decided_at")
+
+  order   Order @relation(fields: [orderId], references: [id])
+  decider User  @relation(fields: [decidedBy], references: [id])
+
+  @@map("deferrals")
+}
+
+model LoadingEvent {
+  id            String   @id @default(uuid())
+  tripId        String   @map("trip_id")
+  orderId       String   @map("order_id")
+  loadedQty     Int      @map("loaded_qty")
+  expectedQty   Int      @map("expected_qty")
+  shortfallFlag Boolean  @default(false) @map("shortfall_flag")
+  createdBy     String   @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  trip    Trip  @relation(fields: [tripId], references: [id])
+  order   Order @relation(fields: [orderId], references: [id])
+  creator User  @relation(fields: [createdBy], references: [id])
+
+  @@map("loading_events")
+}
+
+model SyncEvent {
+  id               String   @id @default(uuid())
+  clientUuid       String   @unique @map("client_uuid")
+  role             Role
+  payloadJson      Json     @map("payload_json")
+  createdOfflineAt DateTime @map("created_offline_at")
+  syncedAt         DateTime @default(now()) @map("synced_at")
+
+  @@map("sync_events")
+}
+
+// ─── Reference Fixtures ───────────────────────────────────────────────────────
+
+model DistrictTravel {
+  id                         String @id @default(uuid())
+  district                   String
+  depot                      String
+  depotToDistrictFreeflowMin Int    @map("depot_to_district_freeflow_min")
+  interStopFreeflowMin       Int    @map("inter_stop_freeflow_min")
+
+  @@unique([district, depot])
+  @@map("district_travel")
+}
+
+model ServiceAllowance {
+  id                  String   @id @default(uuid())
+  brand               String
+  dockType            DockType @map("dock_type")
+  serviceAllowanceMin Int      @map("service_allowance_min")
+
+  @@unique([brand, dockType])
+  @@map("service_allowance")
+}
