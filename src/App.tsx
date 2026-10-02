@@ -1,4 +1,5 @@
-import { AppProvider, useApp } from './context/AppContext';
+import { AppProvider, useApp, ROLE_PREFIX } from './context/AppContext';
+import { AuthProvider } from './context/AuthContext';
 import Shell from './components/Shell';
 
 // Auth
@@ -68,8 +69,24 @@ const SCREEN_TITLES: Record<string, { title: string; subtitle?: string }> = {
 
 function AppContent() {
   const {
-    screen, role, showNotifications, showSearch, showProfile,
+    screen, role, authRestoring, showNotifications, showSearch, showProfile,
   } = useApp();
+
+  // Session restore in progress — hold a splash instead of flashing the login screen (TC-2.6).
+  if (authRestoring) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#030508', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{
+          width: 52, height: 52, borderRadius: 14,
+          background: 'linear-gradient(135deg, #0ea5e9, #0369a1)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 24, fontWeight: 900, color: '#fff',
+        }}>
+          W
+        </div>
+      </div>
+    );
+  }
 
   // Auth screens (no shell)
   const noShellScreens = ['login', 'forgot-password', 'reset-password', 'reset-success', 'role-select'];
@@ -86,6 +103,12 @@ function AppContent() {
   }
 
   if (!role) return <Login />;
+
+  // Role guard: render nothing while AppContext redirects to this role's home —
+  // e.g. a driver cannot open dispatcher routes (TC: role-based routing).
+  if (!screen.startsWith(ROLE_PREFIX[role]) && !screen.startsWith('degradation/')) {
+    return null;
+  }
 
   // Driver screens use mobile frame
   const isDriver = role === 'driver';
@@ -165,8 +188,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <AuthProvider>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </AuthProvider>
   );
 }

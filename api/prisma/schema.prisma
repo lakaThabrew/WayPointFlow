@@ -144,6 +144,7 @@ model Order {
   windowClose            String          @map("window_close")
   deliveryDate           DateTime        @map("delivery_date")
   status                 OrderStatus     @default(NEW)
+  notes                  String?
   createdBy              String          @map("created_by")
   createdAt              DateTime        @default(now()) @map("created_at")
   updatedAt              DateTime        @updatedAt @map("updated_at")

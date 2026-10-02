@@ -50,7 +50,16 @@ async function main() {
       role: 'STORE_MANAGER', name: 'Chamari Wickramasinghe', outletId: 'OUT032', phone: '+94 33 456 7890',
     },
   });
-  console.log('✅ 4 users created');
+  // Second store manager — test fixture for store-isolation TCs (TC-3.5 / TC-3.8).
+  await prisma.user.upsert({
+    where: { email: 'tharindu@waypoint.lk' },
+    update: {},
+    create: {
+      id: 'USR005', email: 'tharindu@waypoint.lk', passwordHash,
+      role: 'STORE_MANAGER', name: 'Tharindu Bandara', outletId: 'OUT041', phone: '+94 11 456 7890',
+    },
+  });
+  console.log('✅ 5 users created');
 
   // ─── Outlets (5) ────────────────────────────────────────────────────────────
   const outlets = [

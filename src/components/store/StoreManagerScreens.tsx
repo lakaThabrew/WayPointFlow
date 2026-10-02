@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   CheckCircle, Package, Clock, ChevronRight, ArrowLeft,
   AlertTriangle, ShoppingCart, TrendingUp, Bell, MapPin, Navigation,
@@ -9,11 +9,37 @@ import {
   InfoRow, Timeline, Divider, Mono, SectionHeader, AlertCard,
   CapacityBar, Table, TableRow, Label, AnimatedNumber,
 } from '../ui';
-import { ORDERS } from '../../data/mockData';
+import { ordersApi, STATUS_LABEL, TEMP_LABEL, formatDate, type ApiOrder, type ApiOrderDetailed } from '../../services/orders';
+import type { OrderStatus, TempType } from '../../types';
+
+// ─── shared fetch helpers ─────────────────────────────────────────────────────
+function useMyOrders() {
+  const [orders, setOrders] = useState<ApiOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    ordersApi.list()
+      .then((r) => setOrders(r.orders))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load orders'))
+      .finally(() => setLoading(false));
+  }, []);
+  return { orders, loading, error };
+}
+
+function FetchState({ loading, error }: { loading: boolean; error: string }) {
+  if (loading) return <Card style={{ padding: 20 }}><p style={{ margin: 0, fontSize: 13, color: C.text3 }}>Loading orders…</p></Card>;
+  if (error) return <AlertCard type="critical" title="Could not load orders" desc={error} />;
+  return null;
+}
 
 // ─── SM01 — Store Home ────────────────────────────────────────────────────────
 export function StoreHome() {
-  const { navigate } = useApp();
+  const { navigate, setSelectedOrder } = useApp();
+  const { orders, loading, error } = useMyOrders();
+
+  const activeCount = orders.filter((o) => ['NEW', 'CONFIRMED', 'PLANNED', 'LOADING', 'IN_TRANSIT', 'AT_RISK'].includes(o.status)).length;
+  const pendingCount = orders.filter((o) => o.status === 'NEW').length;
+  const deliveredCount = orders.filter((o) => o.status === 'DELIVERED').length;
 
   return (
     <div style={{ padding: 28, maxWidth: 900 }}>
@@ -70,9 +96,9 @@ export function StoreHome() {
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }} className="stagger-children">
         {[
-          { label: 'Active orders', value: '2', color: C.accent, action: () => navigate('store/orders') },
-          { label: 'Pending confirm.', value: '1', color: C.warning, action: () => navigate('store/tracking') },
-          { label: 'Delivered today', value: '1', color: C.success, action: () => navigate('store/orders') },
+          { label: 'Active orders', value: String(activeCount), color: C.accent, action: () => navigate('store/orders') },
+          { label: 'Pending confirm.', value: String(pendingCount), color: C.warning, action: () => navigate('store/orders') },
+          { label: 'Delivered', value: String(deliveredCount), color: C.success, action: () => navigate('store/orders') },
           { label: 'Open issues', value: '0', color: C.text3, action: () => {} },
         ].map(s => (
           <div
@@ -104,26 +130,33 @@ export function StoreHome() {
           <SectionHeader title="Recent Orders" action={
             <Btn variant="text" size="sm" onClick={() => navigate('store/orders')}>View all <ChevronRight size={12} /></Btn>
           } />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {ORDERS.filter(o => o.outlet === 'OUT032').map(o => (
-              <Card
-                key={o.id}
-                hover
-                onClick={() => navigate('store/tracking')}
-                style={{ padding: '12px 16px' }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <Mono color={C.accent}>{o.id}</Mono>
-                  <StatusBadge status={o.status} />
-                </div>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <TempBadge temp={o.temp} />
-                  <span style={{ fontSize: 12, color: C.text2 }}>{o.weightKg} kg · {o.packages} pkgs</span>
-                  {o.vehicle && <Mono color={C.text3}>{o.vehicle}</Mono>}
-                </div>
-              </Card>
-            ))}
-          </div>
+          <FetchState loading={loading} error={error} />
+          {!loading && !error && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {orders.slice(0, 4).map((o) => (
+                <Card
+                  key={o.id}
+                  hover
+                  onClick={() => { setSelectedOrder(o.id); navigate('store/tracking'); }}
+                  style={{ padding: '12px 16px' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <Mono color={C.accent}>{o.id}</Mono>
+                    <StatusBadge status={STATUS_LABEL[o.status] as OrderStatus} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <TempBadge temp={TEMP_LABEL[o.temperatureRequirement] as TempType} />
+                    <span style={{ fontSize: 12, color: C.text2 }}>{o.weightKg} kg · {o.units} pkgs</span>
+                  </div>
+                </Card>
+              ))}
+              {orders.length === 0 && (
+                <Card style={{ padding: 20 }}>
+                  <p style={{ margin: 0, fontSize: 13, color: C.text3 }}>No orders yet — create your first order.</p>
+                </Card>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Quick actions */}
@@ -160,18 +193,28 @@ export function StoreHome() {
 }
 
 // ─── SM02 — Orders ────────────────────────────────────────────────────────────
+const ACTIVE_STATUSES = ['NEW', 'CONFIRMED', 'PLANNED', 'LOADING', 'IN_TRANSIT', 'AT_RISK'];
+
 export function StoreOrders() {
-  const { navigate } = useApp();
+  const { navigate, setSelectedOrder } = useApp();
   const [filter, setFilter] = useState('All');
   const filters = ['All', 'Active', 'Delivered', 'Deferred'];
-  const storeOrders = ORDERS.filter(o => o.outlet === 'OUT032');
+  const { orders, loading, error } = useMyOrders();
+
+  const storeOrders = orders.filter((o) => {
+    if (filter === 'All') return true;
+    if (filter === 'Active') return ACTIVE_STATUSES.includes(o.status);
+    if (filter === 'Delivered') return o.status === 'DELIVERED';
+    if (filter === 'Deferred') return o.status === 'DEFERRED';
+    return true;
+  });
 
   return (
     <div style={{ padding: 28, maxWidth: 900 }}>
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Orders — OUT032</h2>
-          <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Waypoint Fresh Gampaha · {storeOrders.length} total orders</p>
+          <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Waypoint Fresh Gampaha · {storeOrders.length} {filter === 'All' ? 'total' : filter.toLowerCase()} orders</p>
         </div>
         <Btn variant="primary" onClick={() => navigate('store/create-order')}>
           <ShoppingCart size={14} /> New order
@@ -194,35 +237,41 @@ export function StoreOrders() {
         ))}
       </div>
 
-      <Card style={{ padding: 0 }}>
-        <Table headers={['Order ID', 'Date', 'Delivery date', 'Type', 'Weight', 'Status', '']}>
-          {storeOrders.map(o => (
-            <TableRow
-              key={o.id}
-              onClick={() => navigate('store/tracking')}
-              cells={[
-                <Mono color={C.accent}>{o.id}</Mono>,
-                <span style={{ fontSize: 12, color: C.text2 }}>29 Sep 2026</span>,
-                <span style={{ fontSize: 12, color: C.text }}>30 Sep 2026</span>,
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <BrandBadge brand={o.brand} />
-                  <TempBadge temp={o.temp} />
-                </div>,
-                <Mono>{o.weightKg} kg</Mono>,
-                <StatusBadge status={o.status} />,
-                <ChevronRight size={14} color={C.text3} />,
-              ]}
-            />
-          ))}
-        </Table>
-      </Card>
+      <FetchState loading={loading} error={error} />
+      {!loading && !error && (
+        <Card style={{ padding: 0 }}>
+          <Table headers={['Order ID', 'Date', 'Delivery date', 'Type', 'Weight', 'Status', '']}>
+            {storeOrders.map((o) => (
+              <TableRow
+                key={o.id}
+                onClick={() => { setSelectedOrder(o.id); navigate('store/tracking'); }}
+                cells={[
+                  <Mono color={C.accent}>{o.id}</Mono>,
+                  <span style={{ fontSize: 12, color: C.text2 }}>{formatDate(o.createdAt)}</span>,
+                  <span style={{ fontSize: 12, color: C.text }}>{formatDate(o.deliveryDate)}</span>,
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <BrandBadge brand={o.brand as 'Fresh' | 'Style' | 'Tech'} />
+                    <TempBadge temp={TEMP_LABEL[o.temperatureRequirement] as TempType} />
+                  </div>,
+                  <Mono>{o.weightKg} kg</Mono>,
+                  <StatusBadge status={STATUS_LABEL[o.status] as OrderStatus} />,
+                  <ChevronRight size={14} color={C.text3} />,
+                ]}
+              />
+            ))}
+          </Table>
+          {storeOrders.length === 0 && (
+            <p style={{ margin: 0, padding: 20, fontSize: 13, color: C.text3 }}>No {filter.toLowerCase()} orders.</p>
+          )}
+        </Card>
+      )}
     </div>
   );
 }
 
 // ─── SM03 — Create Order ──────────────────────────────────────────────────────
 export function CreateOrder() {
-  const { navigate } = useApp();
+  const { navigate, setOrderDraft } = useApp();
   const [brand, setBrand] = useState('Fresh');
   const [date, setDate] = useState('2026-10-01');
   const [window, setWindow] = useState('05:00–07:30');
@@ -347,7 +396,26 @@ export function CreateOrder() {
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
-          <Btn variant="primary" size="lg" disabled={!weight} onClick={() => navigate('store/order-review')}>Review order</Btn>
+          <Btn
+            variant="primary"
+            size="lg"
+            disabled={!weight}
+            onClick={() => {
+              setOrderDraft({
+                brand: brand as 'Fresh' | 'Style' | 'Tech',
+                deliveryDate: date,
+                window,
+                temp: temp as 'Chilled' | 'Frozen' | 'Ambient',
+                weightKg: weight,
+                volumeM3: volume,
+                packages,
+                notes,
+              });
+              navigate('store/order-review');
+            }}
+          >
+            Review order
+          </Btn>
           <Btn variant="secondary" onClick={() => navigate('store/home')}>Cancel</Btn>
         </div>
       </Card>
@@ -357,7 +425,27 @@ export function CreateOrder() {
 
 // ─── SM04 — Order Review ──────────────────────────────────────────────────────
 export function OrderReview() {
-  const { navigate } = useApp();
+  const { navigate, orderDraft, placeOrder } = useApp();
+  const [placing, setPlacing] = useState(false);
+  const [error, setError] = useState('');
+
+  // No draft (e.g. direct navigation / refresh) — send the manager back to the form.
+  useEffect(() => {
+    if (!orderDraft) navigate('store/create-order');
+  }, [orderDraft, navigate]);
+
+  if (!orderDraft) return null;
+
+  const handlePlace = async () => {
+    setPlacing(true);
+    setError('');
+    try {
+      await placeOrder(); // POSTs to the API and navigates to the confirmation screen
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to place order');
+      setPlacing(false);
+    }
+  };
 
   return (
     <div style={{ padding: 28, maxWidth: 600 }}>
@@ -373,23 +461,30 @@ export function OrderReview() {
       <Card style={{ marginBottom: 16 }}>
         <SectionHeader title="Order Summary" />
         <InfoRow label="Outlet" value="OUT032 — Waypoint Fresh Gampaha" />
-        <InfoRow label="Brand" value={<BrandBadge brand="Fresh" />} />
-        <InfoRow label="Delivery date" value="1 October 2026" />
-        <InfoRow label="Delivery window" value="05:00–07:30" mono />
-        <InfoRow label="Temperature" value={<TempBadge temp="Chilled" />} />
+        <InfoRow label="Brand" value={<BrandBadge brand={orderDraft.brand} />} />
+        <InfoRow label="Delivery date" value={formatDate(orderDraft.deliveryDate)} />
+        <InfoRow label="Delivery window" value={orderDraft.window} mono />
+        <InfoRow label="Temperature" value={<TempBadge temp={orderDraft.temp} />} />
         <Divider />
-        <InfoRow label="Weight" value="200 kg" mono />
-        <InfoRow label="Volume" value="0.9 m³" mono />
-        <InfoRow label="Packages" value="14" mono />
+        <InfoRow label="Weight" value={`${orderDraft.weightKg} kg`} mono />
+        <InfoRow label="Volume" value={`${orderDraft.volumeM3 || '0'} m³`} mono />
+        <InfoRow label="Packages" value={orderDraft.packages || '—'} mono />
+        {orderDraft.notes ? <InfoRow label="Notes" value={orderDraft.notes} /> : null}
       </Card>
 
       <div style={{ padding: '12px 14px', background: C.infoDim, border: `1px solid ${C.info}20`, borderRadius: 10, marginBottom: 20 }}>
         <p style={{ margin: '0 0 2px', fontSize: 12, fontWeight: 500, color: C.info }}>Planning status</p>
-        <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>This order will be included in tomorrow's planning. The dispatcher will confirm assignment by 6:00 PM today.</p>
+        <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>This order will be included in the next planning cycle. The dispatcher confirms assignments after the 4:00 PM cutoff.</p>
       </div>
 
+      {error && (
+        <AlertCard type="critical" title="Order not placed" desc={error} />
+      )}
+
       <div style={{ display: 'flex', gap: 10 }}>
-        <Btn variant="primary" size="lg" fullWidth onClick={() => navigate('store/confirmation')}>Place order</Btn>
+        <Btn variant="primary" size="lg" fullWidth loading={placing} onClick={handlePlace}>
+          {placing ? 'Placing order…' : 'Place order'}
+        </Btn>
         <Btn variant="secondary" onClick={() => navigate('store/create-order')}>Edit</Btn>
       </div>
     </div>
@@ -398,7 +493,15 @@ export function OrderReview() {
 
 // ─── SM05 — Order Confirmation ────────────────────────────────────────────────
 export function OrderConfirmation() {
-  const { navigate } = useApp();
+  const { navigate, lastCreatedOrder, setSelectedOrder } = useApp();
+
+  // Direct visit without a fresh order — go to the orders list instead.
+  useEffect(() => {
+    if (!lastCreatedOrder) navigate('store/orders');
+  }, [lastCreatedOrder, navigate]);
+
+  if (!lastCreatedOrder) return null;
+  const o = lastCreatedOrder;
 
   return (
     <div style={{ padding: 28, maxWidth: 560 }}>
@@ -416,19 +519,19 @@ export function OrderConfirmation() {
       </div>
 
       <Card style={{ marginBottom: 20 }}>
-        <InfoRow label="Order ID" value={<Mono color={C.success}>ORD-10527</Mono>} />
-        <InfoRow label="Outlet" value="OUT032 — Waypoint Fresh Gampaha" />
-        <InfoRow label="Delivery date" value="1 October 2026" />
-        <InfoRow label="Window" value="05:00–07:30" mono />
-        <InfoRow label="Temperature" value={<TempBadge temp="Chilled" />} />
-        <InfoRow label="Weight" value="200 kg" mono />
+        <InfoRow label="Order ID" value={<Mono color={C.success}>{o.id}</Mono>} />
+        <InfoRow label="Outlet" value={`${o.outletId} — ${o.district}`} />
+        <InfoRow label="Delivery date" value={formatDate(o.deliveryDate)} />
+        <InfoRow label="Window" value={`${o.windowOpen}–${o.windowClose}`} mono />
+        <InfoRow label="Temperature" value={<TempBadge temp={TEMP_LABEL[o.temperatureRequirement] as TempType} />} />
+        <InfoRow label="Weight" value={`${o.weightKg} kg`} mono />
         <Divider />
         <InfoRow label="Planning status" value={<Badge color={C.text3}>Pending confirmation</Badge>} />
-        <InfoRow label="Expected confirmation" value="By 6:00 PM today" />
+        <InfoRow label="Expected confirmation" value="After the 4:00 PM cutoff" />
       </Card>
 
       <div style={{ display: 'flex', gap: 10 }}>
-        <Btn variant="primary" fullWidth onClick={() => navigate('store/tracking')}>Track this order</Btn>
+        <Btn variant="primary" fullWidth onClick={() => { setSelectedOrder(o.id); navigate('store/tracking'); }}>Track this order</Btn>
         <Btn variant="secondary" onClick={() => navigate('store/home')}>Back to home</Btn>
       </div>
     </div>
@@ -436,61 +539,117 @@ export function OrderConfirmation() {
 }
 
 // ─── SM06 — Delivery Tracking ─────────────────────────────────────────────────
-export function DeliveryTracking() {
-  const { navigate } = useApp();
+const FLOW_STEPS: Array<{ status: ApiOrder['status']; label: string; note: string }> = [
+  { status: 'NEW', label: 'Order placed', note: 'Submitted by the store manager' },
+  { status: 'CONFIRMED', label: 'Confirmed', note: 'Dispatcher confirmed — queue closed' },
+  { status: 'PLANNED', label: 'Planned', note: 'Assigned to a vehicle and trip' },
+  { status: 'LOADING', label: 'Loaded', note: 'Loaded at the depot' },
+  { status: 'IN_TRANSIT', label: 'In transit', note: 'Vehicle departed the depot' },
+  { status: 'DELIVERED', label: 'Delivered', note: 'Awaiting delivery confirmation' },
+];
 
-  const steps = [
-    { label: 'Order placed', time: '29 Sep, 2:30 PM', status: 'done' as const, note: 'Submitted by Chamari Wickramasinghe' },
-    { label: 'Confirmed', time: '29 Sep, 4:15 PM', status: 'done' as const, note: 'Dispatcher confirmed — included in plan' },
-    { label: 'Planned', time: '29 Sep, 8:00 PM', status: 'done' as const, note: 'Assigned to VEH014 Trip 1' },
-    { label: 'Loaded', time: '30 Sep, 3:52 AM', status: 'done' as const, note: 'Loaded at Peliyagoda depot' },
-    { label: 'In transit', time: '30 Sep, 4:13 AM', status: 'active' as const, note: 'VEH014 departed depot · Kasun Perera' },
-    { label: 'Delivered', time: 'Est. 6:42 AM', status: 'pending' as const, note: 'Awaiting delivery confirmation' },
-  ];
+function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+}
+
+export function DeliveryTracking() {
+  const { navigate, selectedOrderId } = useApp();
+  const [order, setOrder] = useState<ApiOrderDetailed | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!selectedOrderId) {
+      navigate('store/orders');
+      return;
+    }
+    setLoading(true);
+    ordersApi.get(selectedOrderId)
+      .then((r) => setOrder(r.order))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load order'))
+      .finally(() => setLoading(false));
+  }, [selectedOrderId, navigate]);
+
+  if (loading || error || !order) {
+    return (
+      <div style={{ padding: 28, maxWidth: 700 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <Btn variant="ghost" size="sm" onClick={() => navigate('store/orders')}><ArrowLeft size={14} /> Orders</Btn>
+        </div>
+        <FetchState loading={loading} error={error} />
+      </div>
+    );
+  }
+
+  const isDeferred = order.status === 'DEFERRED';
+  const currentIdx = FLOW_STEPS.findIndex((s) => s.status === order.status);
+  const stepTimes: Partial<Record<ApiOrder['status'], string>> = {
+    NEW: fmtTime(order.createdAt),
+    DELIVERED: fmtTime(order.tripStops?.[0]?.proofOfDelivery?.recordedAt),
+  };
+  const steps = FLOW_STEPS.map((s, i) => ({
+    label: s.label,
+    time: stepTimes[s.status] ?? '',
+    status: isDeferred ? ('pending' as const) : i < currentIdx ? ('done' as const) : i === currentIdx ? ('active' as const) : ('pending' as const),
+    note: s.note,
+  }));
+  const stop = order.tripStops?.[0];
+  const vehicleReg = stop?.trip?.vehicle?.registrationNo ?? stop?.trip?.vehicleId;
 
   return (
     <div style={{ padding: 28, maxWidth: 700 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('store/orders')}><ArrowLeft size={14} /> Orders</Btn>
         <ChevronRight size={14} color={C.text3} />
-        <Mono color={C.accent}>ORD-10483</Mono>
+        <Mono color={C.accent}>{order.id}</Mono>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16 }}>
         <div>
           <Card style={{ marginBottom: 16 }}>
-            <SectionHeader title="Order ORD-10483" />
-            <InfoRow label="Outlet" value="OUT032 — Gampaha" />
-            <InfoRow label="Brand" value={<BrandBadge brand="Fresh" />} />
-            <InfoRow label="Delivery date" value="30 Sep 2026" />
-            <InfoRow label="Window" value="05:00–07:30" mono />
-            <InfoRow label="Temperature" value={<TempBadge temp="Chilled" />} />
-            <InfoRow label="Weight" value="200 kg" mono />
-            <InfoRow label="Packages" value="14" mono />
+            <SectionHeader title={`Order ${order.id}`} />
+            <InfoRow label="Outlet" value={`${order.outletId} — ${order.district}`} />
+            <InfoRow label="Brand" value={<BrandBadge brand={order.brand as 'Fresh' | 'Style' | 'Tech'} />} />
+            <InfoRow label="Delivery date" value={formatDate(order.deliveryDate)} />
+            <InfoRow label="Window" value={`${order.windowOpen}–${order.windowClose}`} mono />
+            <InfoRow label="Temperature" value={<TempBadge temp={TEMP_LABEL[order.temperatureRequirement] as TempType} />} />
+            <InfoRow label="Weight" value={`${order.weightKg} kg`} mono />
+            <InfoRow label="Packages" value={`${order.units}`} mono />
           </Card>
 
           <Card>
             <SectionHeader title="Status Timeline" />
-            <Timeline steps={steps} />
+            {isDeferred && order.deferrals?.[0] ? (
+              <AlertCard type="warning" title="Order deferred" desc={order.deferrals[0].reason} />
+            ) : (
+              <Timeline steps={steps} />
+            )}
           </Card>
         </div>
 
         <div>
           <Card style={{ marginBottom: 14 }}>
             <SectionHeader title="Delivery Vehicle" />
-            <InfoRow label="Vehicle" value={<Mono color={C.text}>VEH014</Mono>} />
-            <InfoRow label="Driver" value="Kasun Perera" />
-            <InfoRow label="Status" value={<StatusBadge status="In Transit" />} />
-            <InfoRow label="ETA" value="06:42 AM" mono accent />
-            <InfoRow label="Window closes" value="07:30 AM" mono />
-            <div style={{ marginTop: 14, padding: '10px 12px', background: C.warningDim, borderRadius: 8, border: `1px solid ${C.warning}20` }}>
-              <p style={{ margin: 0, fontSize: 12, color: C.warning }}>ETA is 22 minutes behind original plan. Window has 48 minutes remaining.</p>
-            </div>
+            {stop ? (
+              <>
+                <InfoRow label="Vehicle" value={<Mono color={C.text}>{vehicleReg}</Mono>} />
+                <InfoRow label="Status" value={<StatusBadge status={STATUS_LABEL[order.status] as OrderStatus} />} />
+                {stop.plannedArrival && <InfoRow label="Planned arrival" value={fmtTime(stop.plannedArrival)} mono accent />}
+                <InfoRow label="Window closes" value={order.windowClose} mono />
+              </>
+            ) : (
+              <p style={{ margin: 0, fontSize: 12, color: C.text3 }}>
+                {isDeferred ? 'Not assigned — see the deferral reason.' : 'Awaiting planning — a vehicle is assigned when the dispatcher plans this order.'}
+              </p>
+            )}
           </Card>
 
-          <Btn variant="primary" fullWidth onClick={() => navigate('store/received')}>
-            Confirm receipt
-          </Btn>
+          {order.status === 'DELIVERED' && (
+            <Btn variant="primary" fullWidth onClick={() => navigate('store/received')}>
+              Confirm receipt
+            </Btn>
+          )}
         </div>
       </div>
     </div>

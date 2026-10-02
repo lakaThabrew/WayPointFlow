@@ -37,7 +37,7 @@ function BrandMark({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
 
 // â”€â”€â”€ Login â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function Login() {
-  const { navigate, login } = useApp();
+  const { navigate, login, loginAsDemo } = useApp();
   const [email, setEmail] = useState('ashan@waypoint.lk');
   const [password, setPassword] = useState('demo1234');
   const [showPw, setShowPw] = useState(false);
@@ -49,17 +49,15 @@ export function Login() {
     e.preventDefault();
     setLoading(true);
     setError('');
-    await new Promise(r => setTimeout(r, 800));
-    setLoading(false);
-    const found = DEMO_ROLES.find(r => r.email === email);
-    if (found && password === 'demo1234') {
-      login(found.role);
-    } else {
-      setShowRoleSelect(true);
+    try {
+      await login(email, password); // real API auth — navigates to the role home on success
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid email or password');
+      setLoading(false);
     }
   };
 
-  const quickLogin = (role: Role) => login(role);
+  const quickLogin = (role: Role) => { void loginAsDemo(role); };
 
   return (
     <div style={{
@@ -571,7 +569,7 @@ export function ResetSuccess() {
 
 // â”€â”€â”€ Role Select â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function RoleSelect() {
-  const { login } = useApp();
+  const { loginAsDemo } = useApp();
   return (
     <div style={{ minHeight: '100vh', background: '#030508', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
       <LogisticsBackground variant="ai" />
@@ -595,7 +593,7 @@ export function RoleSelect() {
           {DEMO_ROLES.map(r => (
             <button
               key={r.role}
-              onClick={() => login(r.role)}
+              onClick={() => { void loginAsDemo(r.role); }}
               style={{
                 padding: 22,
                 background: 'rgba(255,255,255,0.03)',
