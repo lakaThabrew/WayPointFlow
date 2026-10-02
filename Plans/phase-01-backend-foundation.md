@@ -1,15 +1,15 @@
-# Phase 1 — Supabase Database + Backend Foundation
+# Phase 1 — Database + Backend Foundation (Docker local + Supabase production)
 
 **Branch:** `lakmana-phase-01`
 **Target Day:** October 2, 2026
 **Deadline:** End of Day (before Phase 2 begins)
-**Status:** 🔴 Not Started
+**Status:** 🟢 Implemented locally (2026-10-02) — all TC-1.x pass; TASK 1.6 (Supabase production) pending manual account setup
 
 ---
 
 ## Objective
 
-Create the real Express/TypeScript backend, define the full Prisma schema, connect to both a local Docker PostgreSQL and a production Supabase instance, run migrations, and seed the demo dataset. The phase ends with a working `GET /health` endpoint and a fully seeded database that can be verified by any team member.
+Create the real Express/TypeScript backend, define the full Prisma schema, connect to a local Docker PostgreSQL (production uses the same containerized/hosted PostgreSQL — no Supabase — wired in Phase 11), run migrations, and seed the demo dataset. The phase ends with a working `GET /health` endpoint and a fully seeded database that can be verified by any team member.
 
 ---
 
@@ -22,7 +22,7 @@ Create the real Express/TypeScript backend, define the full Prisma schema, conne
 ✅ npx prisma db seed populates all demo fixtures
 ✅ GET /health → { "status": "ok" }  (HTTP 200)
 ✅ docker compose up db → local PostgreSQL accessible on port 55432
-✅ Supabase project created, DATABASE_URL configured for production
+✅ Production database strategy documented (hosted PostgreSQL, no Supabase — wired in Phase 11)
 ✅ All TC-1.x test cases pass
 ```
 
@@ -62,6 +62,7 @@ npx tsc --init
 ```
 
 **`tsconfig.json` settings:**
+
 ```json
 {
   "compilerOptions": {
@@ -80,6 +81,7 @@ npx tsc --init
 > `rootDir: "."` + the `include` above make `tsc` compile **both** `src/` and `prisma/seed.ts`, producing `dist/src/index.js` and `dist/prisma/seed.js`. This is required because the production Docker image has no `ts-node` — the seed must run as compiled JS there (see TASK 1.5a).
 
 **`package.json` scripts:**
+
 ```json
 {
   "scripts": {
@@ -105,10 +107,12 @@ npx prisma init
 ```
 
 This creates:
+
 - `prisma/schema.prisma`
 - `.env` (with `DATABASE_URL` placeholder)
 
 **`.env` (local / Docker):**
+
 ```env
 DATABASE_URL="postgresql://waypoint:waypoint@localhost:55432/waypointflow?schema=public"
 PORT=4000
@@ -117,7 +121,7 @@ JWT_SECRET=local-dev-secret-change-in-production
 
 > **Port note:** the compose `db` service publishes host port **55432** → container 5432 because this machine already runs PostgreSQL 18 on 5432/5433. If your machine has no local PostgreSQL, 5432 works too — keep `.env` and `docker-compose.yml` consistent either way.
 
-> **Production `.env`:** Replace `DATABASE_URL` with the Supabase connection string. Never commit `.env` files.
+> **Production `.env`:** Replace `DATABASE_URL` with the production PostgreSQL connection string (set at deploy time in Phase 11). Never commit `.env` files.
 
 ---
 
@@ -411,11 +415,11 @@ File: `prisma/seed.ts`
 
 #### Demo Users (4)
 
-| Role | Email | Password | Extra fields |
-|------|-------|----------|--------------|
-| DISPATCHER | ashan@waypoint.lk | demo1234 | depot = Peliyagoda |
-| LOADER | ruwini@waypoint.lk | demo1234 | depot = Peliyagoda |
-| DRIVER | kasun.p@waypoint.lk | demo1234 | depot = Peliyagoda |
+| Role          | Email               | Password | Extra fields                                |
+| ------------- | ------------------- | -------- | ------------------------------------------- |
+| DISPATCHER    | ashan@waypoint.lk   | demo1234 | depot = Peliyagoda                          |
+| LOADER        | ruwini@waypoint.lk  | demo1234 | depot = Peliyagoda                          |
+| DRIVER        | kasun.p@waypoint.lk | demo1234 | depot = Peliyagoda                          |
 | STORE_MANAGER | chamari@waypoint.lk | demo1234 | outlet_id = OUT032 (Waypoint Fresh Gampaha) |
 
 > The store manager's `outlet_id` must be set — TC-3.5 (store isolation) depends on it.
@@ -425,56 +429,57 @@ File: `prisma/seed.ts`
 
 > Demo data mirrors the approved design story: **Fresh / Style / Tech** brands, **Peliyagoda + Kandy** depots, and the outlet/vehicle/order identities used in the UI screens. Do not invent placeholder names — judges compare the working app against the design.
 
-| # | ID | Name | Brand | District | Depot | Dock | Constraint | Notes |
-|---|----|------|-------|----------|-------|------|------------|-------|
-| 1 | OUT032 | Waypoint Fresh Gampaha | Fresh | Gampaha | Peliyagoda | REAR_DOCK | NONE | Standard — store manager's outlet |
-| 2 | OUT041 | Waypoint Fresh Colombo 3 | Fresh | Colombo | Peliyagoda | REAR_DOCK | NONE | Same brand, different district |
-| 3 | OUT063 | Waypoint Tech Nugegoda | Tech | Colombo | Peliyagoda | REAR_DOCK | NONE | Different brand |
-| 4 | OUT047 | Waypoint Fresh Kelaniya | Fresh | Gampaha | Peliyagoda | CURB | **VAN_ONLY** | Constraint demo |
-| 5 | OUT052 | Waypoint Style Majestic City | Style | Colombo | Peliyagoda | MALL_BAY | NONE | Mall window: 10:00–12:00 |
+| #   | ID     | Name                         | Brand | District | Depot      | Dock      | Constraint   | Notes                             |
+| --- | ------ | ---------------------------- | ----- | -------- | ---------- | --------- | ------------ | --------------------------------- |
+| 1   | OUT032 | Waypoint Fresh Gampaha       | Fresh | Gampaha  | Peliyagoda | REAR_DOCK | NONE         | Standard — store manager's outlet |
+| 2   | OUT041 | Waypoint Fresh Colombo 3     | Fresh | Colombo  | Peliyagoda | REAR_DOCK | NONE         | Same brand, different district    |
+| 3   | OUT063 | Waypoint Tech Nugegoda       | Tech  | Colombo  | Peliyagoda | REAR_DOCK | NONE         | Different brand                   |
+| 4   | OUT047 | Waypoint Fresh Kelaniya      | Fresh | Gampaha  | Peliyagoda | CURB      | **VAN_ONLY** | Constraint demo                   |
+| 5   | OUT052 | Waypoint Style Majestic City | Style | Colombo  | Peliyagoda | MALL_BAY  | NONE         | Mall window: 10:00–12:00          |
 
 #### Demo Vehicles (4)
 
-| # | ID | Reg | Type | Temp | MaxKg | MaxM³ | km/L | Quota (L) | Depot |
-|---|----|-----|------|------|-------|-------|------|-----------|-------|
-| 1 | VEH022 | WP-GA-2213 | TRUCK | AMBIENT | 3000 | 15 | 5.8 | 260 | Peliyagoda |
-| 2 | VEH014 | WP-GA-1847 | TRUCK | REEFER | 2400 | 12 | 6.2 | 280 | Peliyagoda |
-| 3 | VEH041 | WP-GA-5522 | VAN | AMBIENT | 800 | 4 | 10.2 | 120 | Peliyagoda |
-| 4 | VEH031 | WP-GA-0914 | VAN | REEFER | 800 | 4 | 9.1 | 140 | Peliyagoda |
+| #   | ID     | Reg        | Type  | Temp    | MaxKg | MaxM³ | km/L | Quota (L) | Depot      |
+| --- | ------ | ---------- | ----- | ------- | ----- | ----- | ---- | --------- | ---------- |
+| 1   | VEH022 | WP-GA-2213 | TRUCK | AMBIENT | 3000  | 15    | 5.8  | 260       | Peliyagoda |
+| 2   | VEH014 | WP-GA-1847 | TRUCK | REEFER  | 2400  | 12    | 6.2  | 280       | Peliyagoda |
+| 3   | VEH041 | WP-GA-5522 | VAN   | AMBIENT | 800   | 4     | 10.2 | 120       | Peliyagoda |
+| 4   | VEH031 | WP-GA-0914 | VAN   | REEFER  | 800   | 4     | 9.1  | 140       | Peliyagoda |
 
 #### Demo District Travel (2 rows)
 
-| District | Depot | Depot→District (min) | Inter-stop (min) |
-|----------|-------|----------------------|-----------------|
-| Gampaha | Peliyagoda | 35 | 15 |
-| Colombo | Peliyagoda | 30 | 15 |
+| District | Depot      | Depot→District (min) | Inter-stop (min) |
+| -------- | ---------- | -------------------- | ---------------- |
+| Gampaha  | Peliyagoda | 35                   | 15               |
+| Colombo  | Peliyagoda | 30                   | 15               |
 
 #### Demo Service Allowance (5 rows)
 
 | Brand | Dock Type | Allowance (min) |
-|-------|-----------|-----------------|
-| Fresh | REAR_DOCK | 20 |
-| Fresh | CURB | 30 |
-| Style | MALL_BAY | 45 |
-| Style | REAR_DOCK | 25 |
-| Tech | REAR_DOCK | 25 |
+| ----- | --------- | --------------- |
+| Fresh | REAR_DOCK | 20              |
+| Fresh | CURB      | 30              |
+| Style | MALL_BAY  | 45              |
+| Style | REAR_DOCK | 25              |
+| Tech  | REAR_DOCK | 25              |
 
 #### Demo Orders (8)
 
 > `temperatureRequirement` uses goods requirements (`CHILLED` / `FROZEN` / `AMBIENT`) — never the vehicle capability enum. **Fresh** brand trips are evaluated against the 270-minute pre-dawn budget; other brands against the 480-minute daytime budget.
 
-| # | ID | Outlet | Temp Req | Weight | Volume | Status | Purpose |
-|---|----|--------|----------|--------|--------|--------|---------|
-| 1 | ORD-10483 | OUT032 Waypoint Fresh Gampaha | CHILLED | 200 kg | 0.9 m³ | NEW | Fresh/reefer order |
-| 2 | ORD-10486 | OUT063 Waypoint Tech Nugegoda | AMBIENT | 350 kg | 3.5 m³ | NEW | Normal ambient order |
-| 3 | ORD-10484 | OUT041 Waypoint Fresh Colombo 3 | CHILLED | 180 kg | 1.2 m³ | NEW | District separation demo (Colombo ≠ Gampaha) |
-| 4 | ORD-10491 | OUT052 Waypoint Style Majestic City | AMBIENT | 3200 kg | 16 m³ | NEW | Capacity conflict demo (exceeds the only ambient truck, VEH022: 3000 kg / 15 m³) |
-| 5 | ORD-10482 | OUT047 Waypoint Fresh Kelaniya | CHILLED | 120 kg | 0.6 m³ | NEW | Van-only outlet demo |
-| 6 | ORD-10485 | OUT052 Waypoint Style Majestic City | AMBIENT | 400 kg | 8 m³ | NEW | Mall window demo |
-| 7 | ORD-10466 | OUT032 Waypoint Fresh Gampaha | CHILLED | 185 kg | 0.8 m³ | **DEFERRED** | Pre-seeded deferral demo |
-| 8 | ORD-10455 | OUT032 Waypoint Fresh Gampaha | CHILLED | 240 kg | 1.1 m³ | **DELIVERED** | Completed-delivery demo — the completed trip's stop references this order (FK requirement) |
+| #   | ID        | Outlet                              | Temp Req | Weight  | Volume | Status        | Purpose                                                                                    |
+| --- | --------- | ----------------------------------- | -------- | ------- | ------ | ------------- | ------------------------------------------------------------------------------------------ |
+| 1   | ORD-10483 | OUT032 Waypoint Fresh Gampaha       | CHILLED  | 200 kg  | 0.9 m³ | NEW           | Fresh/reefer order                                                                         |
+| 2   | ORD-10486 | OUT063 Waypoint Tech Nugegoda       | AMBIENT  | 350 kg  | 3.5 m³ | NEW           | Normal ambient order                                                                       |
+| 3   | ORD-10484 | OUT041 Waypoint Fresh Colombo 3     | CHILLED  | 180 kg  | 1.2 m³ | NEW           | District separation demo (Colombo ≠ Gampaha)                                               |
+| 4   | ORD-10491 | OUT052 Waypoint Style Majestic City | AMBIENT  | 3200 kg | 16 m³  | NEW           | Capacity conflict demo (exceeds the only ambient truck, VEH022: 3000 kg / 15 m³)           |
+| 5   | ORD-10482 | OUT047 Waypoint Fresh Kelaniya      | CHILLED  | 120 kg  | 0.6 m³ | NEW           | Van-only outlet demo                                                                       |
+| 6   | ORD-10485 | OUT052 Waypoint Style Majestic City | AMBIENT  | 400 kg  | 8 m³   | NEW           | Mall window demo                                                                           |
+| 7   | ORD-10466 | OUT032 Waypoint Fresh Gampaha       | CHILLED  | 185 kg  | 0.8 m³ | **DEFERRED**  | Pre-seeded deferral demo                                                                   |
+| 8   | ORD-10455 | OUT032 Waypoint Fresh Gampaha       | CHILLED  | 240 kg  | 1.1 m³ | **DELIVERED** | Completed-delivery demo — the completed trip's stop references this order (FK requirement) |
 
 Order 7 must have a corresponding `deferrals` record:
+
 ```
 reason: "No compatible reefer available — all reefer capacity allocated to higher-priority Fresh orders"
 ```
@@ -495,10 +500,10 @@ reason: "No compatible reefer available — all reefer capacity allocated to hig
 File: `api/src/index.ts`
 
 ```typescript
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import { healthRouter } from './routes/health';
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import { healthRouter } from "./routes/health";
 
 dotenv.config();
 
@@ -508,7 +513,7 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
-app.use('/health', healthRouter);
+app.use("/health", healthRouter);
 
 app.listen(PORT, () => {
   console.log(`[api] WaypointFlow API running on http://localhost:${PORT}`);
@@ -520,18 +525,18 @@ export default app;
 File: `api/src/routes/health.ts`
 
 ```typescript
-import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Router } from "express";
+import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 export const healthRouter = Router();
 
-healthRouter.get('/', async (_req, res) => {
+healthRouter.get("/", async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
-    res.json({ status: 'ok' });
+    res.json({ status: "ok" });
   } catch {
-    res.status(503).json({ status: 'error', message: 'Database unreachable' });
+    res.status(503).json({ status: "error", message: "Database unreachable" });
   }
 });
 ```
@@ -554,7 +559,7 @@ services:
       POSTGRES_PASSWORD: waypoint
       POSTGRES_DB: waypointflow
     ports:
-      - "55432:5432"  # host port 55432 — host PostgreSQL 18 already occupies 5432/5433
+      - "55432:5432" # host port 55432 — host PostgreSQL 18 already occupies 5432/5433
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -568,7 +573,7 @@ services:
     restart: unless-stopped
     depends_on:
       db:
-        condition: service_healthy   # wait until Postgres accepts connections — plain "depends_on" races the first migration
+        condition: service_healthy # wait until Postgres accepts connections — plain "depends_on" races the first migration
     environment:
       DATABASE_URL: postgresql://waypoint:waypoint@db:5432/waypointflow?schema=public
       PORT: 4000
@@ -634,6 +639,8 @@ docker compose up api   # → migrate deploy → seed → listening on :4000
 
 ### TASK 1.6 — Supabase Production Setup
 
+Production database = **Supabase PostgreSQL** (chosen provider). The judge-facing `docker compose up` path never touches Supabase — it always uses the local containerized `db` service.
+
 1. Go to [supabase.com](https://supabase.com) → **New Project**
 2. Choose region: **Singapore** (closest to Sri Lanka)
 3. Set a strong database password and save it securely
@@ -681,11 +688,13 @@ Required for hashing demo user passwords in the seed script. Use **`bcryptjs`** 
 **Action:** `npx prisma migrate dev --name init`
 
 **Expected:**
+
 - 12 tables created successfully
 - `prisma/migrations/` folder generated
 - Zero errors
 
 **Verify:**
+
 ```bash
 npx prisma studio
 # or
@@ -699,6 +708,7 @@ psql -h localhost -p 55432 -U waypoint -d waypointflow -c "\dt"
 **Action:** `npm run db:seed`
 
 **Expected output:**
+
 ```
 ✅ 4 users created
 ✅ 5 outlets created
@@ -718,14 +728,17 @@ psql -h localhost -p 55432 -U waypoint -d waypointflow -c "\dt"
 ### TC-1.4 — Health endpoint
 
 **Action:**
+
 ```bash
 curl http://localhost:4000/health
 ```
 
 **Expected:**
+
 ```json
 { "status": "ok" }
 ```
+
 HTTP status: `200 OK`
 
 ---
@@ -733,6 +746,7 @@ HTTP status: `200 OK`
 ### TC-1.5 — Data persistence
 
 **Action:**
+
 1. Run seed
 2. Stop API (`Ctrl+C`)
 3. Restart API (`npm run dev`)
@@ -742,7 +756,7 @@ HTTP status: `200 OK`
 
 ---
 
-## Commit Sequence
+## Commit Sequence(get approve from user)
 
 ```bash
 git add api/package.json api/tsconfig.json
@@ -765,11 +779,11 @@ git commit -m "chore(docker): add db and api services to compose"
 
 ## Environment Variables Reference
 
-| Variable | Local | Production |
-|----------|-------|------------|
+| Variable       | Local                                                                       | Production                                                 |
+| -------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | `DATABASE_URL` | `postgresql://waypoint:waypoint@localhost:55432/waypointflow?schema=public` | Supabase URI (direct connection, port 5432) |
-| `PORT` | `4000` | Set by host |
-| `JWT_SECRET` | `local-dev-secret-change-in-production` | Strong random string |
+| `PORT`         | `4000`                                                                      | Set by host                                                |
+| `JWT_SECRET`   | `local-dev-secret-change-in-production`                                     | Strong random string                                       |
 
 > `JWT_SECRET` is not consumed in Phase 1 but should be present to avoid restructuring `.env` in Phase 2.
 
@@ -816,14 +830,14 @@ Before moving to Phase 2 (Authentication + Role Access), verify all boxes:
 
 ## Design Notes & Decisions
 
-| Decision | Rationale |
-|----------|-----------|
-| **No CSV dataset** | This phase uses only hardcoded seed fixtures. Full dataset integration is a future (Datathon) phase. |
-| **Seed mirrors the design story** | Fresh/Style/Tech brands, Peliyagoda/Kandy depots and the UI's outlet/vehicle/order IDs (OUT032, VEH014, ORD-10482…) — judges compare the working app against the approved design, so no placeholder names. |
-| **`TempRequirement` vs `TemperatureType`** | Orders store the goods requirement (`CHILLED`/`FROZEN`/`AMBIENT`); vehicles store capability (`REEFER`/`AMBIENT`). Two enums on purpose — the allocator rule maps them (`CHILLED`/`FROZEN` ⇒ `REEFER`). |
-| **Time windows as `String` ("HH:mm")** | Avoids timezone complexity in the MVP. Can be migrated to proper time types if needed. |
-| **`photo_url` nullable** | Photo upload is explicitly deferred per the implementation plan. Record this in `document/design-deviations.md`. |
-| **Seed uses `upsert`** | Safe to re-run multiple times without duplicating data. |
-| **bcryptjs in seed** | Demo user passwords must be hashed even in Phase 1 — avoids storing plain text at any point. `bcryptjs` (pure JS) avoids native build tooling in the Alpine Docker image. |
-| **Compiled seed in Docker** | Production image has no `ts-node`; `tsc` compiles `prisma/seed.ts` → `dist/prisma/seed.js` and compose runs it with plain `node`. |
-| **`JWT_SECRET` in `.env` now** | Pre-configured so Phase 2 auth code works without `.env` restructuring. |
+| Decision                                   | Rationale                                                                                                                                                                                                  |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No CSV dataset**                         | This phase uses only hardcoded seed fixtures. Full dataset integration is a future (Datathon) phase.                                                                                                       |
+| **Seed mirrors the design story**          | Fresh/Style/Tech brands, Peliyagoda/Kandy depots and the UI's outlet/vehicle/order IDs (OUT032, VEH014, ORD-10482…) — judges compare the working app against the approved design, so no placeholder names. |
+| **`TempRequirement` vs `TemperatureType`** | Orders store the goods requirement (`CHILLED`/`FROZEN`/`AMBIENT`); vehicles store capability (`REEFER`/`AMBIENT`). Two enums on purpose — the allocator rule maps them (`CHILLED`/`FROZEN` ⇒ `REEFER`).    |
+| **Time windows as `String` ("HH:mm")**     | Avoids timezone complexity in the MVP. Can be migrated to proper time types if needed.                                                                                                                     |
+| **`photo_url` nullable**                   | Photo upload is explicitly deferred per the implementation plan. Record this in `document/design-deviations.md`.                                                                                           |
+| **Seed uses `upsert`**                     | Safe to re-run multiple times without duplicating data.                                                                                                                                                    |
+| **bcryptjs in seed**                       | Demo user passwords must be hashed even in Phase 1 — avoids storing plain text at any point. `bcryptjs` (pure JS) avoids native build tooling in the Alpine Docker image.                                  |
+| **Compiled seed in Docker**                | Production image has no `ts-node`; `tsc` compiles `prisma/seed.ts` → `dist/prisma/seed.js` and compose runs it with plain `node`.                                                                          |
+| **`JWT_SECRET` in `.env` now**             | Pre-configured so Phase 2 auth code works without `.env` restructuring.                                                                                                                                    |
