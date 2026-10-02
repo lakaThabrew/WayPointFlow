@@ -3,6 +3,19 @@ import { useLocation, useNavigate as useRouterNavigate } from 'react-router-dom'
 import type { Screen, Role, AppUser } from '../types';
 import { ALERTS } from '../data/mockData';
 import { useAuth, type ApiRole, type AuthUser } from './AuthContext';
+import { ordersApi, type ApiOrder } from '../services/orders';
+
+/** Draft collected on the Create Order screen, carried through Review → Place. */
+export interface OrderDraft {
+  brand: 'Fresh' | 'Style' | 'Tech';
+  deliveryDate: string; // YYYY-MM-DD
+  window: string;       // "05:00–07:30" (en-dash)
+  temp: 'Chilled' | 'Frozen' | 'Ambient';
+  weightKg: string;
+  volumeM3: string;
+  packages: string;
+  notes: string;
+}
 
 interface AppContextType {
   screen: Screen;
@@ -28,6 +41,11 @@ interface AppContextType {
   setShowProfile: (v: boolean) => void;
   alerts: typeof ALERTS;
   markAlertRead: (id: string) => void;
+  orderDraft: OrderDraft | null;
+  setOrderDraft: (d: OrderDraft | null) => void;
+  lastCreatedOrder: ApiOrder | null;
+  /** POSTs the current draft, stores the created order and navigates to the confirmation screen. Throws on API error. */
+  placeOrder: () => Promise<ApiOrder>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -119,6 +137,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [showSearch, setShowSearch] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [alerts, setAlerts] = useState(ALERTS);
+  const [orderDraft, setOrderDraft] = useState<OrderDraft | null>(null);
+  const [lastCreatedOrder, setLastCreatedOrder] = useState<ApiOrder | null>(null);
+
+  const placeOrder = async (): Promise<ApiOrder> => {
+    if (!orderDraft) throw new Error('No draft order — start from Create Order');
+    const [windowOpen, windowClose] = orderDraft.window.split('–').map((s) => s.trim());
+    const res = await ordersApi.create({
+      brand: orderDraft.brand,
+      tempRequirement: orderDraft.temp.toUpperCase() as 'CHILLED' | 'FROZEN' | 'AMBIENT',
+      weightKg: Number(orderDraft.weightKg),
+      volumeM3: orderDraft.volumeM3 ? Number(orderDraft.volumeM3) : undefined,
+      units: orderDraft.packages ? Number(orderDraft.packages) : undefined,
+      windowOpen,
+      windowClose,
+      deliveryDate: orderDraft.deliveryDate,
+      notes: orderDraft.notes || undefined,
+    });
+    setLastCreatedOrder(res.order);
+    setOrderDraft(null);
+    navigate('store/confirmation');
+    return res.order;
+  };
 
   const login = async (email: string, password: string) => {
     const u = await auth.login(email, password); // throws on invalid credentials
@@ -168,6 +208,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         showNotifications, showSearch, showProfile,
         setShowNotifications, setShowSearch, setShowProfile,
         alerts, markAlertRead,
+        orderDraft, setOrderDraft, lastCreatedOrder, placeOrder,
       }}
     >
       {children}
