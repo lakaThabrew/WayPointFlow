@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: waypoint
+      POSTGRES_PASSWORD: waypoint
+      POSTGRES_DB: waypointflow
+    ports:
+      - "55432:5432"  # host port 55432 — host PostgreSQL 18 already occupies 5432/5433
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U waypoint -d waypointflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy   # wait until Postgres accepts connections — plain "depends_on" races the first migration
+    environment:
+      DATABASE_URL: postgresql://waypoint:waypoint@db:5432/waypointflow?schema=public
+      PORT: 4000
+      JWT_SECRET: change-in-production
+    ports:
+      - "4000:4000"
+    command: >
+      sh -c "npx prisma migrate deploy && node dist/prisma/seed.js && node dist/src/index.js"
+
+  # web service added in Phase 10
+
+volumes:
+  pgdata:

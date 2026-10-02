@@ -46,18 +46,10 @@ The existing Figma design should remain the visual source of truth. Functional i
 
 Use **PostgreSQL** everywhere, via Prisma. Two environments, one schema:
 
-* **Local development + Docker:** containerized PostgreSQL (`postgres:16`) run by `docker-compose.yml`. The compose stack must run the complete app with seed data standalone — no external credentials or accounts required. This is a submission requirement ("a single docker-compose file for running the app with seed data").
-* **Production:** **Supabase PostgreSQL**. The same Prisma schema and migrations run against Supabase; only `DATABASE_URL` changes.
+* **Local development + Docker (judging):** containerized PostgreSQL (`postgres:16`) run by `docker-compose.yml`. The compose stack runs the complete app with seed data standalone — no external credentials or accounts required. This is a submission requirement ("a single docker-compose file for running the app with seed data").
+* **Production:** **Supabase PostgreSQL** (chosen provider). The same Prisma schema and migrations run against Supabase; only `DATABASE_URL` changes.
 
-Supabase will provide (production only):
-
-* PostgreSQL database
-* Database management
-* Production persistence
-* Easy deployment
-* Optional future support for Supabase Storage
-
-The application backend connects through the `DATABASE_URL` environment variable, so switching between the local container and Supabase requires no code change.
+The application backend connects through the `DATABASE_URL` environment variable, so switching between the local container and Supabase requires no code change. Local development and judging need **no external database account** — Supabase is production-only.
 
 ---
 
@@ -82,6 +74,12 @@ The demo data should contain only the minimum entities required to demonstrate t
 The seed data must be stored as application seed fixtures rather than depending on external CSV files.
 
 Two small reference fixtures are exempt from the "minimum entities" rule because the planning engine cannot function without them: `district_travel` (travel minutes per district/depot) and `service_allowance` (handling minutes per brand/dock type). Include only the rows needed by the demo districts and brands. (Full CSV-based data and the Datathon models arrive in the next phase.)
+
+---
+
+## 2.3 Agent Workflow Constraints
+
+* **Commit Approval:** The AI agent MUST explicitly ask for and receive user approval before making any git commits to the repository.
 
 ---
 
@@ -116,7 +114,7 @@ Two small reference fixtures are exempt from the "minimum entities" rule because
 
 * Frontend: Vercel
 * Backend: Render/Railway/other suitable Node hosting
-* Database: Supabase
+* Database: PostgreSQL (Docker locally, Supabase in production)
 
 ## Local Development
 
@@ -920,11 +918,11 @@ must succeed.
 
 ---
 
-# PHASE 1 — Supabase Database + Backend Foundation
+# PHASE 1 — PostgreSQL Database + Backend Foundation
 
 ## Objective
 
-Create the real backend and connect it to Supabase.
+Create the real backend and connect it to PostgreSQL.
 
 ## Tasks
 
@@ -958,7 +956,7 @@ Expected:
 
 **Action:** Start API.
 
-**Expected:** API connects successfully to Supabase.
+**Expected:** API connects successfully to PostgreSQL.
 
 ### TC-1.2 — Migration
 
@@ -1515,7 +1513,7 @@ docker compose up --build
 # → web on http://localhost:8080, seeded demo users, zero external dependencies
 ```
 
-Supabase is used **only** for the production deployment. Locally and in Docker the API connects to the compose `db` service via `DATABASE_URL`. The same Prisma schema and migrations run in both environments.
+**Supabase** hosts the production database. Locally and in Docker the API connects to the compose `db` service via `DATABASE_URL`; the deployed API connects to Supabase. The same Prisma schema and migrations run in both environments — the judge-facing compose stack never touches Supabase.
 
 ## Test Cases
 
@@ -1573,17 +1571,17 @@ Deploy the complete application publicly.
              │ Express API │
              └──────┬──────┘
                     │
-                    │ PostgreSQL
-                    ▼
-             ┌─────────────┐
-             │  Supabase   │
-             │ PostgreSQL  │
-             └─────────────┘
+                     │ PostgreSQL
+                     ▼
+              ┌─────────────┐
+              │  Supabase   │
+              │ PostgreSQL  │
+              └─────────────┘
 ```
 
 ## Tasks
 
-* Create production Supabase project.
+* Create production Supabase project (use the **direct connection** URI, port 5432, for migrations).
 * Configure production environment variables.
 * Deploy API.
 * Deploy frontend.
@@ -1904,7 +1902,7 @@ The project is considered hackathon-ready when all of the following are true:
 
 * [ ] Frontend builds successfully
 * [ ] Backend builds successfully
-* [ ] Supabase database is connected
+* [ ] Supabase database is connected (production)
 * [ ] Prisma migrations work
 * [ ] Seed data works
 * [ ] Authentication works
@@ -2064,7 +2062,7 @@ Recommended format:
 ```text
 feat(web): establish production frontend baseline
 feat(api): initialize express typescript backend
-feat(db): add supabase prisma schema
+feat(db): add prisma schema
 feat(auth): implement jwt authentication
 feat(store): implement order creation flow
 feat(planning): implement allocation engine
@@ -2104,7 +2102,7 @@ Driver Delivery
 ↓
 PoD
 ↓
-Supabase persistence
+PostgreSQL persistence
 ↓
 Deployment
 ```
@@ -2265,14 +2263,14 @@ The final implementation must demonstrate this complete lifecycle:
                │
                ▼
         ┌─────────────┐
-        │ POST /sync  │
-        └──────┬──────┘
-               │
-               ▼
-        ┌─────────────┐
-        │  Supabase   │
-        │ PostgreSQL  │
-        └─────────────┘
+         │ POST /sync  │
+         └──────┬──────┘
+                │
+                ▼
+         ┌─────────────┐
+         │  Supabase   │
+         │ PostgreSQL  │
+         └─────────────┘
 ```
 
 **Primary implementation principle:** build one complete working vertical slice at a time, test it, commit it, and only then move to the next phase.
