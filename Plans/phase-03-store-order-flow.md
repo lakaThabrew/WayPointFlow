@@ -3,7 +3,7 @@
 **Branch:** `lakmana-phase-03`
 **Target Day:** October 3, 2026
 **Depends on:** Phase 1 (DB + seed) ✅, Phase 2 (auth + roles) ✅
-**Status:** ⚪ Not Started
+**Status:** 🟢 Implemented (2026-10-02) — backend TC-3.1–3.3, 3.5, 3.7–3.9 verified via API tests; frontend builds clean (0 TS errors); awaiting commit approval
 
 ---
 
