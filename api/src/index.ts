@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { healthRouter } from './routes/health';
 import { authRouter } from './routes/auth';
 import { planningRouter } from './routes/planning';
+import { ordersRouter } from './routes/orders';
 
 dotenv.config();
 
@@ -16,6 +17,7 @@ app.use(express.json());
 app.use('/health', healthRouter);
 app.use('/auth', authRouter);
 app.use('/planning', planningRouter);
+app.use('/orders', ordersRouter);
 
 app.listen(PORT, () => {
   console.log(`[api] WaypointFlow API running on http://localhost:${PORT}`);
