@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { TripStatus, StopStatus, OrderStatus } from '@prisma/client';
 
-export const getDriverTrips = async (req: Request, res: Response) => {
+export const getDriverRoute = async (req: Request, res: Response) => {
   try {
     const driverId = req.authUser!.id;
 
@@ -19,9 +19,11 @@ export const getDriverTrips = async (req: Request, res: Response) => {
       include: {
         vehicle: true,
         stops: {
+          orderBy: { sequence: 'asc' },
           include: {
             outlet: true,
-            order: true
+            order: true,
+            proofOfDelivery: true
           }
         }
       },
@@ -38,26 +40,7 @@ export const getDriverTrips = async (req: Request, res: Response) => {
   }
 };
 
-export const getTripStops = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    
-    const stops = await prisma.tripStop.findMany({
-      where: { tripId: id },
-      orderBy: { sequence: 'asc' },
-      include: {
-        outlet: true,
-        order: true,
-        proofOfDelivery: true
-      }
-    });
 
-    res.json(stops);
-  } catch (error) {
-    console.error('Error fetching trip stops:', error);
-    res.status(500).json({ error: 'Failed to fetch trip stops' });
-  }
-};
 
 export const markStopArrival = async (req: Request, res: Response) => {
   try {

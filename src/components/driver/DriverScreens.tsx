@@ -8,7 +8,7 @@ import {
   C, Badge, StatusBadge, BrandBadge, TempBadge, Btn,
   InfoRow, Timeline, Divider, Mono, OfflineBanner,
 } from '../ui';
-import { getDriverActiveTrip, getTripStops, markStopArrival, completeDelivery, reportIssue, type DriverTrip, type DriverStop } from '../../services/driver';
+import { getDriverActiveTrip, markStopArrival, completeDelivery, reportIssue, type DriverTrip, type DriverStop } from '../../services/driver';
 import dayjs from 'dayjs';
 
 // Mobile-first driver screens - all content sized for 390px phone frame
@@ -161,7 +161,7 @@ export function RouteOverview() {
   useEffect(() => {
     getDriverActiveTrip().then(t => {
       setTrip(t);
-      if (t) getTripStops(t.id).then(setStops);
+      if (t) setStops(t.stops || []);
     });
   }, []);
 
@@ -243,7 +243,7 @@ export function StopDetails() {
   const [arriving, setArriving] = useState(false);
 
   useEffect(() => {
-    if (selectedTripId) getTripStops(selectedTripId).then(setStops);
+    if (selectedTripId) getDriverActiveTrip().then(t => { if(t) setStops(t.stops || []) });
   }, [selectedTripId]);
 
   const stop = stops.find(s => s.id === selectedStopId);
@@ -363,7 +363,7 @@ export function DeliveryConfirmation() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (selectedTripId) getTripStops(selectedTripId).then(setStops);
+    if (selectedTripId) getDriverActiveTrip().then(t => { if(t) setStops(t.stops || []) });
   }, [selectedTripId]);
 
   const stop = stops.find(s => s.id === selectedStopId);
@@ -544,7 +544,7 @@ export function DeliveryIssue() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (selectedTripId) getTripStops(selectedTripId).then(setStops);
+    if (selectedTripId) getDriverActiveTrip().then(t => { if(t) setStops(t.stops || []) });
   }, [selectedTripId]);
 
   const stop = stops.find(s => s.id === selectedStopId);

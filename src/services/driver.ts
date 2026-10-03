@@ -25,12 +25,10 @@ export interface DriverStop {
 }
 
 export async function getDriverActiveTrip(): Promise<DriverTrip | null> {
-  return apiFetch<DriverTrip | null>('/driver/trips');
+  return apiFetch<DriverTrip | null>('/driver/route');
 }
 
-export async function getTripStops(tripId: string): Promise<DriverStop[]> {
-  return apiFetch<DriverStop[]>(`/driver/trips/${tripId}/stops`);
-}
+
 
 export async function markStopArrival(stopId: string): Promise<any> {
   return apiFetch<any>(`/driver/stops/${stopId}/arrive`, {
