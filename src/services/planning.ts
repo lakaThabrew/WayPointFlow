@@ -96,4 +96,7 @@ export const planningApi = {
     }),
   releaseTrip: (tripId: string) =>
     apiFetch<{ trip: { id: string; status: string } }>(`/trips/${tripId}/release`, { method: 'POST' }),
+  liveOps: () => apiFetch<{ trips: any[] }>('/planning/live-ops'),
+  alerts: () => apiFetch<{ alerts: any[] }>('/planning/alerts'),
+  markAlertRead: (stopId: string) => apiFetch<{ success: boolean }>(`/planning/alerts/${stopId}/read`, { method: 'POST' }),
 };

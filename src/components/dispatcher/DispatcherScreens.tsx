@@ -28,6 +28,16 @@ function hhmm(iso: string | null | undefined): string {
 // ─── D01 — Dispatcher Overview ───────────────────────────────────────────────
 export function DispatcherOverview() {
   const { navigate } = useApp();
+  const [liveAlerts, setLiveAlerts] = useState<any[]>([]);
+
+  useEffect(() => {
+    planningApi.alerts().then(r => setLiveAlerts(r.alerts)).catch(console.error);
+    // In a real app we'd poll or use websockets
+    const timer = setInterval(() => {
+      planningApi.alerts().then(r => setLiveAlerts(r.alerts)).catch(console.error);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   const vehicleStatusGroups = [
     { label: 'Available', count: 4, color: C.success },
@@ -196,20 +206,26 @@ export function DispatcherOverview() {
         {/* Alerts panel */}
         <div>
           <Card style={{ padding: 20, marginBottom: 16 }}>
-            <SectionHeader title="Active Alerts" subtitle={`${ALERTS.filter(a => !a.read).length} unread`} />
+            <SectionHeader title="Active Alerts" subtitle={`${liveAlerts.length} unread`} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {ALERTS.filter(a => !a.read).map(alert => (
+              {liveAlerts.map(alert => (
                 <AlertCard
                   key={alert.id}
-                  title={alert.title}
-                  desc={alert.description}
-                  type={alert.type}
-                  time={alert.time}
-                  action={alert.screen ? (
-                    <Btn variant="text" size="sm" onClick={() => navigate(alert.screen!)}>View <ChevronRight size={11} /></Btn>
-                  ) : undefined}
+                  title={`Driver Issue: ${alert.outlet.name}`}
+                  desc={`Issue reported for order ${alert.orderId}`}
+                  type="critical"
+                  time={hhmm(alert.arrivedAt)}
+                  action={
+                    <Btn variant="text" size="sm" onClick={async () => {
+                      await planningApi.markAlertRead(alert.id);
+                      setLiveAlerts(prev => prev.filter(a => a.id !== alert.id));
+                    }}>Mark read <CheckCircle size={11} /></Btn>
+                  }
                 />
               ))}
+              {liveAlerts.length === 0 && (
+                <p style={{ margin: 0, fontSize: 13, color: C.text3 }}>No active alerts.</p>
+              )}
             </div>
           </Card>
 
@@ -1189,9 +1205,26 @@ export function DispatchPlan() {
 // ─── D08 — Live Operations ────────────────────────────────────────────────────
 export function LiveOperations() {
   const { navigate } = useApp();
-  const [selectedVehicle, setSelectedVehicle] = useState('VEH014');
-  const vehicle = VEHICLES.find(v => v.id === selectedVehicle)!;
-  const trip = TRIPS.find(t => t.vehicle === selectedVehicle);
+  const [trips, setTrips] = useState<any[]>([]);
+  const [selectedVehicle, setSelectedVehicle] = useState<string | null>(null);
+
+  useEffect(() => {
+    planningApi.liveOps().then(r => {
+      setTrips(r.trips);
+      if (r.trips.length > 0 && !selectedVehicle) {
+        setSelectedVehicle(r.trips[0].vehicle.registrationNo);
+      }
+    }).catch(console.error);
+
+    const timer = setInterval(() => {
+      planningApi.liveOps().then(r => setTrips(r.trips)).catch(console.error);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [selectedVehicle]);
+
+  const trip = trips.find(t => t.vehicle.registrationNo === selectedVehicle);
+  const vehicle = trip?.vehicle;
+  const currentStop = trip?.stops?.find((s: any) => s.status === 'PENDING' || s.status === 'ARRIVED');
 
   return (
     <div style={{ display: 'flex', height: '100%' }}>
@@ -1264,22 +1297,25 @@ export function LiveOperations() {
           position: 'absolute', top: 20, right: 20,
           display: 'flex', flexDirection: 'column', gap: 6,
         }}>
-          {VEHICLES.filter(v => ['On Route', 'Loading'].includes(v.status)).map(v => (
+          {trips.map(t => (
             <button
-              key={v.id}
-              onClick={() => setSelectedVehicle(v.id)}
+              key={t.vehicle.registrationNo}
+              onClick={() => setSelectedVehicle(t.vehicle.registrationNo)}
               style={{
-                padding: '6px 12px', background: selectedVehicle === v.id ? C.accentDim : `${C.surface}e0`,
-                border: `1px solid ${selectedVehicle === v.id ? C.accent : C.border}`,
+                padding: '6px 12px', background: selectedVehicle === t.vehicle.registrationNo ? C.accentDim : `${C.surface}e0`,
+                border: `1px solid ${selectedVehicle === t.vehicle.registrationNo ? C.accent : C.border}`,
                 borderRadius: 8, cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center',
                 backdropFilter: 'blur(8px)',
               }}
             >
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor(v.status) }} className={v.status === 'On Route' ? 'pulse-dot' : ''} />
-              <span style={{ fontSize: 12, color: selectedVehicle === v.id ? C.accent : C.text, fontFamily: 'Inter, sans-serif' }}>{v.id}</span>
-              <StatusBadge status={v.status} />
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: t.status === 'COMPLETED' ? C.success : C.accent }} className={t.status === 'IN_TRANSIT' ? 'pulse-dot' : ''} />
+              <span style={{ fontSize: 12, color: selectedVehicle === t.vehicle.registrationNo ? C.accent : C.text, fontFamily: 'Inter, sans-serif' }}>{t.vehicle.registrationNo}</span>
+              <StatusBadge status={t.status} />
             </button>
           ))}
+          {trips.length === 0 && (
+             <p style={{ margin: 0, padding: 10, fontSize: 12, color: C.text3, background: `${C.surface}e0`, borderRadius: 8 }}>No active trips.</p>
+          )}
         </div>
       </div>
 
@@ -1287,36 +1323,46 @@ export function LiveOperations() {
       <div style={{ width: 300, background: C.surface, borderLeft: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
         <div style={{ padding: 20, borderBottom: `1px solid ${C.border}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <Mono color={C.text}>{vehicle.id}</Mono>
-            <StatusBadge status={vehicle.status} />
+            <Mono color={C.text}>{vehicle?.registrationNo || 'No vehicle'}</Mono>
+            {trip && <StatusBadge status={trip.status} />}
           </div>
-          <p style={{ margin: '0 0 4px', fontSize: 12, color: C.text2 }}>Driver: <strong style={{ color: C.text }}>Kasun Perera</strong></p>
-          <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>Trip {trip?.trip} · {trip?.district}</p>
+          <p style={{ margin: '0 0 4px', fontSize: 12, color: C.text2 }}>Driver: <strong style={{ color: C.text }}>Assigned Driver</strong></p>
+          <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>{trip ? `Trip ${trip.tripNumber} · ${trip.district}` : 'Select a trip'}</p>
         </div>
 
         <div style={{ padding: 20, borderBottom: `1px solid ${C.border}` }}>
           <SectionHeader title="Current Stop" />
-          <div style={{
-            padding: '12px 14px', background: C.accentDim, border: `1px solid ${C.accent}30`,
-            borderRadius: 10, marginBottom: 12,
-          }}>
-            <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: C.accent }}>OUT032</p>
-            <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>Waypoint Fresh Gampaha</p>
-          </div>
-          <InfoRow label="Planned arrival" value="06:20" mono />
-          <InfoRow label="Estimated arrival" value="06:42" mono />
-          <InfoRow label="Delay" value={<Badge color={C.warning}>+22 min</Badge>} />
-          <InfoRow label="Window closes" value="07:30" mono />
-          <InfoRow label="Time remaining" value="48 min" mono accent />
+          {currentStop ? (
+            <>
+              <div style={{
+                padding: '12px 14px', background: C.accentDim, border: `1px solid ${C.accent}30`,
+                borderRadius: 10, marginBottom: 12,
+              }}>
+                <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: C.accent }}>{currentStop.outlet.name}</p>
+                <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>{currentStop.orderId}</p>
+              </div>
+              <InfoRow label="Planned arrival" value={hhmm(currentStop.plannedArrival)} mono />
+              <InfoRow label="Estimated arrival" value={hhmm(currentStop.plannedArrival)} mono />
+              <InfoRow label="Window closes" value={currentStop.order.windowClose} mono />
+            </>
+          ) : (
+            <p style={{ margin: 0, fontSize: 13, color: C.text3 }}>{trip?.status === 'COMPLETED' ? 'All stops completed.' : 'No current stop'}</p>
+          )}
         </div>
 
         <div style={{ padding: 20 }}>
           <SectionHeader title="Route Progress" />
-          <Timeline steps={[
-            { label: 'Departed Peliyagoda', time: '04:13', status: 'done', note: 'VEH014 departs' },
-            { label: 'OUT041 — Colombo 3', time: '05:58', status: 'done', note: 'Delivered ORD-10484' },
-            { label: 'OUT032 — Gampaha', time: '06:42 ETA', status: 'active', note: 'ORD-10483, ORD-10527' },
-          ]} />
+          <Timeline steps={
+            trip ? [
+              { label: 'Departed Depot', time: hhmm(trip.plannedDeparture), status: trip.status === 'READY' ? 'pending' : 'done', note: trip.vehicle.registrationNo },
+              ...(trip.stops || []).map((s: any) => ({
+                label: s.outlet.name,
+                time: s.status === 'COMPLETED' ? hhmm(s.leftAt || s.actualArrival) : 'ETA ' + hhmm(s.plannedArrival),
+                status: s.status === 'COMPLETED' ? 'done' : s.status === 'ARRIVED' ? 'active' : 'pending',
+                note: s.status === 'COMPLETED' ? 'Delivered' : s.orderId
+              }))
+            ] : []
+          } />
         </div>
 
         <div style={{ padding: '0 20px 20px' }}>

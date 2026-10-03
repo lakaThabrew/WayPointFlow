@@ -54,6 +54,7 @@ export const ordersApi = {
     apiFetch<{ order: ApiOrder }>('/orders', { method: 'POST', body: JSON.stringify(input) }),
   list: () => apiFetch<{ orders: ApiOrder[] }>('/orders'),
   get: (id: string) => apiFetch<{ order: ApiOrderDetailed }>(`/orders/${id}`),
+  confirmReceipt: (id: string) => apiFetch<{ order: ApiOrder }>(`/orders/${id}/receipt`, { method: 'POST' }),
 };
 
 /** API status → UI badge label (types.ts OrderStatus). */

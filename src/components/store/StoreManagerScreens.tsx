@@ -658,12 +658,51 @@ export function DeliveryTracking() {
 
 // ─── SM07 — Delivery Received ─────────────────────────────────────────────────
 export function DeliveryReceived() {
-  const { navigate } = useApp();
+  const { navigate, selectedOrderId } = useApp();
+  const [order, setOrder] = useState<ApiOrderDetailed | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [qty, setQty] = useState(true);
   const [cond, setCond] = useState('Good');
   const [confirmed, setConfirmed] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
-  if (confirmed) {
+  useEffect(() => {
+    if (!selectedOrderId) {
+      navigate('store/orders');
+      return;
+    }
+    ordersApi.get(selectedOrderId)
+      .then((r) => setOrder(r.order))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load order'))
+      .finally(() => setLoading(false));
+  }, [selectedOrderId, navigate]);
+
+  const handleConfirm = async () => {
+    if (!selectedOrderId) return;
+    try {
+      setConfirming(true);
+      await ordersApi.confirmReceipt(selectedOrderId);
+      setConfirmed(true);
+    } catch (e) {
+      alert('Failed to confirm receipt: ' + (e instanceof Error ? e.message : 'Unknown error'));
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  if (loading || error || !order) {
+    return (
+      <div style={{ padding: 28, maxWidth: 600 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <Btn variant="ghost" size="sm" onClick={() => navigate('store/tracking')}><ArrowLeft size={14} /> Tracking</Btn>
+        </div>
+        <FetchState loading={loading} error={error} />
+      </div>
+    );
+  }
+
+  if (confirmed || order.receiptConfirmedAt) {
     return (
       <div style={{ padding: 28, maxWidth: 520, textAlign: 'center' }}>
         <div style={{ padding: '40px 32px', background: C.card, border: `1px solid ${C.success}30`, borderRadius: 14 }}>
@@ -671,8 +710,8 @@ export function DeliveryReceived() {
             <CheckCircle size={26} color={C.success} />
           </div>
           <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 700, color: C.text }}>Delivery received</h2>
-          <p style={{ margin: '0 0 8px', fontSize: 13, color: C.text2 }}>Receipt confirmed for ORD-10483. This has been recorded and the driver and dispatcher have been notified.</p>
-          <p style={{ margin: '0 0 24px', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: C.text3 }}>Received: 06:47 AM, 30 Sep 2026</p>
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: C.text2 }}>Receipt confirmed for {order.id}. This has been recorded and the dispatcher has been notified.</p>
+          <p style={{ margin: '0 0 24px', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: C.text3 }}>Received: {order.receiptConfirmedAt ? fmtTime(order.receiptConfirmedAt) : 'Just now'}</p>
           <Btn variant="secondary" fullWidth onClick={() => navigate('store/home')}>Return to home</Btn>
         </div>
       </div>
@@ -687,16 +726,16 @@ export function DeliveryReceived() {
 
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Delivery received</h2>
-        <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Confirm receipt of ORD-10483</p>
+        <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Confirm receipt of {order.id}</p>
       </div>
 
       <Card style={{ marginBottom: 16 }}>
         <SectionHeader title="Order Details" />
-        <InfoRow label="Order ID" value={<Mono color={C.accent}>ORD-10483</Mono>} />
-        <InfoRow label="Received time" value="06:47 AM" mono accent />
-        <InfoRow label="Packages" value="14 packages" mono />
-        <InfoRow label="Weight" value="200 kg" mono />
-        <InfoRow label="Temperature" value={<TempBadge temp="Chilled" />} />
+        <InfoRow label="Order ID" value={<Mono color={C.accent}>{order.id}</Mono>} />
+        <InfoRow label="Received time" value={fmtTime(order.tripStops?.[0]?.proofOfDelivery?.recordedAt || new Date().toISOString())} mono accent />
+        <InfoRow label="Packages" value={`${order.units} packages`} mono />
+        <InfoRow label="Weight" value={`${order.weightKg} kg`} mono />
+        <InfoRow label="Temperature" value={<TempBadge temp={TEMP_LABEL[order.temperatureRequirement] as TempType} />} />
       </Card>
 
       <Card style={{ marginBottom: 20 }}>
@@ -715,7 +754,7 @@ export function DeliveryReceived() {
             }}
           >
             {qty ? <CheckCircle size={16} /> : <div style={{ width: 16, height: 16, borderRadius: '50%', border: `1px solid ${C.text3}` }} />}
-            Quantity verified — 14 packages, 200 kg received
+            Quantity verified — {order.units} packages, {order.weightKg} kg received
           </button>
         </div>
 
@@ -738,7 +777,9 @@ export function DeliveryReceived() {
       </Card>
 
       <div style={{ display: 'flex', gap: 10 }}>
-        <Btn variant="primary" size="lg" fullWidth disabled={!qty} onClick={() => setConfirmed(true)}>Confirm receipt</Btn>
+        <Btn variant="primary" size="lg" fullWidth disabled={!qty} loading={confirming} onClick={handleConfirm}>
+          {confirming ? 'Confirming...' : 'Confirm receipt'}
+        </Btn>
         <Btn variant="danger" onClick={() => {}}>Report discrepancy</Btn>
       </div>
     </div>

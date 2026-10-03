@@ -145,6 +145,7 @@ model Order {
   deliveryDate           DateTime        @map("delivery_date")
   status                 OrderStatus     @default(NEW)
   notes                  String?
+  receiptConfirmedAt     DateTime?       @map("receipt_confirmed_at")
   createdBy              String          @map("created_by")
   createdAt              DateTime        @default(now()) @map("created_at")
   updatedAt              DateTime        @updatedAt @map("updated_at")
@@ -188,6 +189,7 @@ model TripStop {
   arrivedAt      DateTime?  @map("arrived_at")
   leftAt         DateTime?  @map("left_at")
   status         StopStatus @default(PENDING)
+  issueAcknowledged Boolean @default(false) @map("issue_acknowledged")
 
   trip            Trip             @relation(fields: [tripId], references: [id])
   order           Order            @relation(fields: [orderId], references: [id])

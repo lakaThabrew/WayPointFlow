@@ -89,3 +89,26 @@ export async function getMyOrder(req: Request, res: Response) {
   if (!order) return res.status(404).json({ error: 'Order not found' });
   return res.json({ order });
 }
+
+/** POST /orders/:id/receipt — store manager confirms receipt. */
+export async function confirmReceipt(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const order = await prisma.order.findFirst({
+      where: { id, outletId: req.authUser!.outletId ?? '__none__' },
+    });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.status !== 'DELIVERED') {
+      return res.status(400).json({ error: 'Order is not delivered yet' });
+    }
+
+    const updated = await prisma.order.update({
+      where: { id },
+      data: { receiptConfirmedAt: new Date() }
+    });
+    return res.json({ order: updated });
+  } catch (error) {
+    console.error('Error confirming receipt:', error);
+    res.status(500).json({ error: 'Failed to confirm receipt' });
+  }
+}
