@@ -6,7 +6,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import {
   C, Badge, StatusBadge, BrandBadge, TempBadge, Btn,
-  InfoRow, Timeline, Divider, Mono, OfflineBanner,
+  InfoRow, Timeline, Divider, Mono, OfflineBanner, Spinner, EmptyState,
 } from '../ui';
 import { getDriverActiveTrip, markStopArrival, completeDelivery, reportIssue, type DriverTrip, type DriverStop } from '../../services/driver';
 import dayjs from 'dayjs';
@@ -55,9 +55,10 @@ export function DriverHome() {
       </div>
 
       {!trip && !loading && (
-        <div style={{ padding: 20, textAlign: 'center', color: C.text2 }}>
-          No active trips assigned.
-        </div>
+        <EmptyState icon={Package} title="No active trips" desc="No trips are assigned to you for today." />
+      )}
+      {loading && (
+        <div className="flex justify-center py-20"><Spinner size={28} /></div>
       )}
 
       {trip && (
@@ -165,7 +166,7 @@ export function RouteOverview() {
     });
   }, []);
 
-  if (!trip) return <div style={{ padding: 20 }}>Loading...</div>;
+  if (!trip) return <div className="flex justify-center py-20"><Spinner size={28} /></div>;
 
   return (
     <div style={{ flex: 1, background: C.bg, display: 'flex', flexDirection: 'column' }}>
@@ -249,7 +250,7 @@ export function StopDetails() {
   const stop = stops.find(s => s.id === selectedStopId);
   const stopIndex = stops.findIndex(s => s.id === selectedStopId);
 
-  if (!stop) return <div style={{ padding: 20 }}>Loading stop...</div>;
+  if (!stop) return <div className="flex justify-center py-20"><Spinner size={28} /></div>;
 
   const handleArrive = async () => {
     setArriving(true);
@@ -368,7 +369,7 @@ export function DeliveryConfirmation() {
 
   const stop = stops.find(s => s.id === selectedStopId);
 
-  if (!stop) return <div style={{ padding: 20 }}>Loading...</div>;
+  if (!stop) return <div className="flex justify-center py-20"><Spinner size={28} /></div>;
 
   const handleConfirm = async () => {
     if (submitting) return;

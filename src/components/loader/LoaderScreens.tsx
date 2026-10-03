@@ -10,7 +10,7 @@ import {
   C, Card, Badge, StatusBadge, BrandBadge, TempBadge, Btn,
   KpiCard, CapacityBar, AlertCard, Table, TableRow, SectionHeader,
   InfoRow, Divider, ConstraintTag, Mono, Label,
-  AnimatedNumber, AiBadge, Sparkline,
+  AnimatedNumber, AiBadge, Sparkline, Spinner, EmptyState,
 } from '../ui';
 import { ORDERS, VEHICLES, TRIPS, TODAY_DISPLAY } from '../../data/mockData';
 
@@ -27,15 +27,15 @@ export function LoaderHome() {
   ];
 
   return (
-    <div style={{ padding: 28, maxWidth: 1100 }}>
+    <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full">
       {/* Hero Header */}
-      <div style={{
-        marginBottom: 24, padding: '20px 24px',
-        background: 'linear-gradient(135deg, rgba(251,191,36,0.08) 0%, rgba(12,18,32,0.6) 60%)',
-        borderRadius: 16, border: '1px solid rgba(251,191,36,0.15)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        position: 'relative', overflow: 'hidden',
-      }}>
+      <div
+        className="mb-6 p-5 md:p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center relative overflow-hidden gap-4"
+        style={{
+          background: 'linear-gradient(135deg, rgba(251,191,36,0.08) 0%, rgba(12,18,32,0.6) 60%)',
+          border: '1px solid rgba(251,191,36,0.15)',
+        }}
+      >
         <div style={{ position: 'absolute', top: -40, right: -40, width: 200, height: 200, background: 'radial-gradient(circle, rgba(251,191,36,0.10) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div>
           <h2 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 800, color: C.text, letterSpacing: '-0.025em' }}>Today's Loading</h2>
@@ -53,7 +53,7 @@ export function LoaderHome() {
       </div>
 
       {/* Status cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 24 }} className="stagger-children">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6 stagger-children">
         {statusCounts.map(s => (
           <div
             key={s.label}
@@ -94,7 +94,7 @@ export function LoaderHome() {
         <SectionHeader title="Current Dock Activity" subtitle="Active loading runs" action={
           <Btn variant="primary" size="sm" onClick={() => navigate('loader/queue')}>Open loading queue</Btn>
         } />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {TRIPS.map(t => {
             const vehicle = VEHICLES.find(v => v.id === t.vehicle)!;
             const runStatus = t.status === 'On Route' ? 'Departed' : t.status === 'Loading' ? 'Loading' : 'Waiting';
@@ -163,11 +163,11 @@ export function LoadingQueue() {
   };
 
   if (loading) {
-    return <div style={{ padding: 28, color: C.text2 }}>Loading queue...</div>;
+    return <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full flex justify-center py-20"><Spinner size={32} /></div>;
   }
 
   return (
-    <div style={{ padding: 28 }}>
+    <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full">
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Loading Queue</h2>
@@ -201,7 +201,7 @@ export function LoadingQueue() {
           })}
         </Table>
         {runs.length === 0 && (
-           <div style={{ padding: '30px', textAlign: 'center', color: C.text3 }}>No trips ready for loading.</div>
+           <EmptyState icon={Truck} title="No trips" desc="No trips ready for loading." />
         )}
       </Card>
     </div>
@@ -218,13 +218,13 @@ export function RunDetails() {
     getTripManifest(selectedTripId).then(setTrip).catch(console.error);
   }, [selectedTripId]);
 
-  if (!trip) return <div style={{ padding: 28, color: C.text2 }}>Loading run details...</div>;
+  if (!trip) return <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full flex justify-center py-20"><Spinner size={32} /></div>;
 
   const totalWeight = trip.stops.reduce((sum: number, s: any) => sum + s.order.weightKg, 0);
   const totalVolume = trip.stops.reduce((sum: number, s: any) => sum + s.order.volumeM3, 0);
 
   return (
-    <div style={{ padding: 28, maxWidth: 900 }}>
+    <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('loader/queue')}><ArrowLeft size={14} /> Queue</Btn>
         <ChevronRight size={14} color={C.text3} />
@@ -232,7 +232,7 @@ export function RunDetails() {
       </div>
 
       {/* Run header */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16, marginBottom: 20 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 mb-5">
         <Card>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
             <div>

@@ -7,7 +7,7 @@ import { useApp } from '../../context/AppContext';
 import {
   C, Card, Badge, StatusBadge, BrandBadge, TempBadge, Btn,
   InfoRow, Timeline, Divider, Mono, SectionHeader, AlertCard,
-  CapacityBar, Table, TableRow, Label, AnimatedNumber,
+  CapacityBar, Table, TableRow, Label, AnimatedNumber, Spinner, EmptyState,
 } from '../ui';
 import { ordersApi, STATUS_LABEL, TEMP_LABEL, formatDate, type ApiOrder, type ApiOrderDetailed } from '../../services/orders';
 import type { OrderStatus, TempType } from '../../types';
@@ -27,7 +27,7 @@ function useMyOrders() {
 }
 
 function FetchState({ loading, error }: { loading: boolean; error: string }) {
-  if (loading) return <Card style={{ padding: 20 }}><p style={{ margin: 0, fontSize: 13, color: C.text3 }}>Loading orders…</p></Card>;
+  if (loading) return <Card style={{ padding: 40, textAlign: 'center' }}><Spinner size={28} /><p style={{ margin: '12px 0 0', fontSize: 13, color: C.text3 }}>Loading orders…</p></Card>;
   if (error) return <AlertCard type="critical" title="Could not load orders" desc={error} />;
   return null;
 }
@@ -42,22 +42,22 @@ export function StoreHome() {
   const deliveredCount = orders.filter((o) => o.status === 'DELIVERED').length;
 
   return (
-    <div style={{ padding: 28, maxWidth: 900 }}>
+    <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
       {/* Header */}
-      <div style={{
-        marginBottom: 24, padding: '20px 24px',
-        background: 'linear-gradient(135deg, rgba(52,211,153,0.08) 0%, rgba(12,18,32,0.6) 60%)',
-        borderRadius: 16, border: '1px solid rgba(52,211,153,0.15)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        position: 'relative', overflow: 'hidden',
-      }}>
+      <div
+        className="mb-6 p-5 md:p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center relative overflow-hidden gap-4"
+        style={{
+          background: 'linear-gradient(135deg, rgba(52,211,153,0.08) 0%, rgba(12,18,32,0.6) 60%)',
+          border: '1px solid rgba(52,211,153,0.15)',
+        }}
+      >
         <div style={{ position: 'absolute', top: -40, right: -40, width: 200, height: 200, background: 'radial-gradient(circle, rgba(52,211,153,0.10) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div>
           <p style={{ margin: '0 0 4px', fontSize: 10, color: C.fresh, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Store Manager</p>
           <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800, color: C.text, letterSpacing: '-0.025em' }}>Waypoint Fresh — OUT032</h2>
           <p style={{ margin: 0, fontSize: 13, color: C.text3 }}>14 Station Rd, Gampaha · Tuesday, 30 Sep 2026</p>
         </div>
-        <div style={{ textAlign: 'right' }}>
+        <div className="text-left md:text-right">
           <p style={{ margin: 0, fontSize: 10, color: C.text3, textTransform: 'uppercase', letterSpacing: '0.08em' }}>On-time Rate</p>
           <p style={{ margin: '4px 0 0', fontSize: 28, fontWeight: 800, color: C.fresh, fontFamily: 'JetBrains Mono, monospace' }}><AnimatedNumber value={94} />%</p>
         </div>
@@ -71,7 +71,7 @@ export function StoreHome() {
         marginBottom: 20,
       }}>
         <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: C.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Today's delivery</p>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
           <div>
             <h3 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 800, color: C.text, letterSpacing: '-0.02em' }}>Arriving at 06:42 AM</h3>
             <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>VEH014 · Kasun Perera · 25 packages</p>
@@ -94,7 +94,7 @@ export function StoreHome() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }} className="stagger-children">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 stagger-children">
         {[
           { label: 'Active orders', value: String(activeCount), color: C.accent, action: () => navigate('store/orders') },
           { label: 'Pending confirm.', value: String(pendingCount), color: C.warning, action: () => navigate('store/orders') },
@@ -124,7 +124,7 @@ export function StoreHome() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
         {/* Recent orders */}
         <div>
           <SectionHeader title="Recent Orders" action={
@@ -151,8 +151,8 @@ export function StoreHome() {
                 </Card>
               ))}
               {orders.length === 0 && (
-                <Card style={{ padding: 20 }}>
-                  <p style={{ margin: 0, fontSize: 13, color: C.text3 }}>No orders yet — create your first order.</p>
+                <Card style={{ padding: 0 }}>
+                  <EmptyState icon={Package} title="No orders" desc="No orders yet — create your first order." />
                 </Card>
               )}
             </div>
@@ -210,7 +210,7 @@ export function StoreOrders() {
   });
 
   return (
-    <div style={{ padding: 28, maxWidth: 900 }}>
+    <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Orders — OUT032</h2>
@@ -261,7 +261,7 @@ export function StoreOrders() {
             ))}
           </Table>
           {storeOrders.length === 0 && (
-            <p style={{ margin: 0, padding: 20, fontSize: 13, color: C.text3 }}>No {filter.toLowerCase()} orders.</p>
+            <EmptyState icon={Package} title="No orders found" desc={`No ${filter.toLowerCase()} orders.`} />
           )}
         </Card>
       )}
@@ -284,7 +284,7 @@ export function CreateOrder() {
   const isCutoffPassed = new Date().getHours() >= 16;
 
   return (
-    <div style={{ padding: 28, maxWidth: 720 }}>
+    <div className="p-4 md:p-7 max-w-[720px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('store/home')}><ArrowLeft size={14} /> Store Home</Btn>
         <ChevronRight size={14} color={C.text3} />
@@ -330,7 +330,7 @@ export function CreateOrder() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label style={{ display: 'block', marginBottom: 6, fontSize: 12, fontWeight: 500, color: C.text2 }}>Delivery date <span style={{ color: C.danger }}>*</span></label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} />
@@ -367,7 +367,7 @@ export function CreateOrder() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
           <div>
             <label style={{ display: 'block', marginBottom: 6, fontSize: 12, fontWeight: 500, color: C.text2 }}>Weight (kg) <span style={{ color: C.danger }}>*</span></label>
             <input type="number" value={weight} onChange={e => setWeight(e.target.value)} placeholder="e.g. 200" />

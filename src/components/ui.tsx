@@ -1377,3 +1377,33 @@ export function MetricRow({ label, value, color, max }: { label: string; value: 
     </div>
   );
 }
+
+// ─── Loading & Empty States ───────────────────────────────────────────────────
+
+export function Spinner({ size = 24, color = C.accent }: { size?: number; color?: string }) {
+  return (
+    <div
+      className="spin-slow"
+      style={{
+        width: size, height: size,
+        border: `2px solid ${color}30`,
+        borderTopColor: color,
+        borderRadius: '50%',
+        display: 'inline-block'
+      }}
+    />
+  );
+}
+
+export function EmptyState({ icon: Icon, title, desc, action }: { icon: any; title: string; desc: string; action?: ReactNode }) {
+  return (
+    <div style={{ padding: '40px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ width: 48, height: 48, borderRadius: 24, background: C.elevated, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+        <Icon size={24} color={C.text3} />
+      </div>
+      <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 600, color: C.text }}>{title}</h3>
+      <p style={{ margin: '0 0 20px', fontSize: 13, color: C.text2, maxWidth: 300 }}>{desc}</p>
+      {action}
+    </div>
+  );
+}

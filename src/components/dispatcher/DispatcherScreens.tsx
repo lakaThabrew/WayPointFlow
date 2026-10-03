@@ -9,7 +9,7 @@ import {
   C, Card, Badge, StatusBadge, BrandBadge, TempBadge, Btn,
   KpiCard, CapacityBar, AlertCard, Table, TableRow, SectionHeader,
   InfoRow, Timeline, Label, Divider, ConstraintTag, Mono,
-  AnimatedNumber, AiBadge, TrendIndicator, Sparkline,
+  AnimatedNumber, AiBadge, TrendIndicator, Sparkline, Spinner, EmptyState,
 } from '../ui';
 import {
   ORDERS, VEHICLES, TRIPS, ALERTS, STATS, TODAY_DISPLAY,
@@ -48,15 +48,15 @@ export function DispatcherOverview() {
   ];
 
   return (
-    <div style={{ padding: 28, maxWidth: 1400 }}>
+    <div className="p-4 md:p-7 max-w-[1400px] mx-auto w-full">
       {/* Hero Header */}
-      <div style={{
-        marginBottom: 24, padding: '20px 24px',
-        background: 'linear-gradient(135deg, rgba(14,165,233,0.08) 0%, rgba(12,18,32,0.6) 60%)',
-        borderRadius: 16, border: '1px solid rgba(14,165,233,0.15)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-        position: 'relative', overflow: 'hidden',
-      }}>
+      <div
+        className="mb-6 p-5 md:p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start relative overflow-hidden gap-4"
+        style={{
+          background: 'linear-gradient(135deg, rgba(14,165,233,0.08) 0%, rgba(12,18,32,0.6) 60%)',
+          border: '1px solid rgba(14,165,233,0.15)',
+        }}
+      >
         <div style={{
           position: 'absolute', top: -40, right: -40, width: 200, height: 200,
           background: 'radial-gradient(circle, rgba(14,165,233,0.12) 0%, transparent 70%)',
@@ -81,14 +81,14 @@ export function DispatcherOverview() {
       </div>
 
       {/* KPI Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }} className="stagger-children">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6 stagger-children">
         <KpiCard label="Orders Received" value={STATS.ordersReceived} sub="today" accent={C.text2} icon={<Package size={20} />} sparkData={[28,30,27,32,29,31,STATS.ordersReceived]} trend="+3.2%" trendUp />
         <KpiCard label="Orders Planned" value={STATS.ordersPlanned} sub={`${STATS.ordersConfirmed} confirmed`} accent={C.accent} icon={<CheckCircle size={20} />} sparkData={[20,22,21,24,23,25,STATS.ordersPlanned]} trend="+8.1%" trendUp />
         <KpiCard label="At-Risk Deliveries" value={STATS.atRiskDeliveries} sub="need attention" accent={C.danger} icon={<AlertTriangle size={20} />} alert={STATS.atRiskDeliveries > 0} sparkData={[1,2,1,0,2,1,STATS.atRiskDeliveries]} trend="-50%" trendUp />
         <KpiCard label="Deferred" value={STATS.ordersDeferred} sub="need rescheduling" accent={C.warning} icon={<XCircle size={20} />} sparkData={[2,1,3,2,1,2,STATS.ordersDeferred]} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5">
         {/* Main content */}
         <div>
           {/* Operations Timeline */}
@@ -224,7 +224,7 @@ export function DispatcherOverview() {
                 />
               ))}
               {liveAlerts.length === 0 && (
-                <p style={{ margin: 0, fontSize: 13, color: C.text3 }}>No active alerts.</p>
+                <EmptyState icon={CheckCircle} title="No active alerts" desc="Everything is running smoothly." />
               )}
             </div>
           </Card>
@@ -286,7 +286,7 @@ export function DispatcherOrders() {
   );
 
   return (
-    <div style={{ padding: 28 }}>
+    <div className="p-4 md:p-7 max-w-[1400px] mx-auto w-full">
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Orders</h2>
@@ -338,7 +338,7 @@ export function DispatcherOrders() {
         </div>
       </Card>
 
-      {loading && <Card style={{ padding: 20 }}><p style={{ margin: 0, fontSize: 13, color: C.text3 }}>Loading orders…</p></Card>}
+      {loading && <Card style={{ padding: 40, textAlign: 'center' }}><Spinner size={28} /><p style={{ margin: '12px 0 0', fontSize: 13, color: C.text3 }}>Loading orders…</p></Card>}
       {!loading && error && <AlertCard type="critical" title="Could not load orders" desc={error} />}
       {!loading && !error && (
       <Card style={{ padding: 0 }}>
@@ -367,7 +367,7 @@ export function DispatcherOrders() {
           ))}
         </Table>
         {filtered.length === 0 && (
-          <div style={{ padding: '32px 0', textAlign: 'center', color: C.text3, fontSize: 13 }}>No orders match the selected filters.</div>
+          <EmptyState icon={Package} title="No orders match" desc="No orders match the selected filters." />
         )}
       </Card>
       )}
@@ -381,7 +381,7 @@ export function OrderDetails() {
   const order = ORDERS.find(o => o.id === selectedOrderId) || ORDERS[0];
 
   return (
-    <div style={{ padding: 28, maxWidth: 1100 }}>
+    <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('dispatcher/orders')}>
           <ArrowLeft size={14} /> Orders
@@ -391,7 +391,7 @@ export function OrderDetails() {
         <StatusBadge status={order.status} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5">
         {/* Left */}
         <div>
           <Card style={{ marginBottom: 16 }}>
