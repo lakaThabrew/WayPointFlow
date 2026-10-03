@@ -148,3 +148,99 @@ export const reportIssue = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to report issue' });
   }
 };
+
+export const syncEvents = async (req: Request, res: Response) => {
+  try {
+    const { events } = req.body;
+    const userRole = req.authUser!.role;
+    
+    // Process each event sequentially
+    for (const event of events) {
+      const existing = await prisma.syncEvent.findUnique({
+        where: { clientUuid: event.clientUuid }
+      });
+      if (existing) continue;
+
+      try {
+        if (event.type === 'ARRIVE') {
+          const { stopId } = event.data;
+          const stop = await prisma.tripStop.findUnique({ where: { id: stopId }, include: { trip: true } });
+          if (stop) {
+            await prisma.tripStop.update({
+              where: { id: stopId },
+              data: {
+                status: StopStatus.ARRIVED,
+                actualArrival: stop.actualArrival || new Date(event.timestamp),
+                arrivedAt: stop.arrivedAt || new Date(event.timestamp)
+              }
+            });
+            if (stop.trip.status === TripStatus.READY) {
+              await prisma.trip.update({
+                where: { id: stop.tripId },
+                data: { status: TripStatus.IN_TRANSIT }
+              });
+            }
+          }
+        } else if (event.type === 'COMPLETE') {
+          const { stopId, receiverName, signatureNote } = event.data;
+          const stop = await prisma.tripStop.findUnique({ where: { id: stopId } });
+          if (stop) {
+            await prisma.proofOfDelivery.upsert({
+              where: { stopId },
+              update: {},
+              create: {
+                stopId,
+                receiverName,
+                signatureNote: signatureNote || '',
+                recordedAt: new Date(event.timestamp),
+                synced: true
+              }
+            });
+            await prisma.tripStop.update({
+              where: { id: stopId },
+              data: { status: StopStatus.COMPLETED, leftAt: stop.leftAt || new Date(event.timestamp) }
+            });
+            await prisma.order.update({
+              where: { id: stop.orderId },
+              data: { status: OrderStatus.DELIVERED }
+            });
+          }
+        } else if (event.type === 'ISSUE') {
+          const { stopId, issueReason, description } = event.data;
+          const stop = await prisma.tripStop.findUnique({ where: { id: stopId } });
+          if (stop) {
+            await prisma.tripStop.update({
+              where: { id: stopId },
+              data: { status: StopStatus.ISSUE, leftAt: stop.leftAt || new Date(event.timestamp) }
+            });
+            await prisma.order.update({
+              where: { id: stop.orderId },
+              data: {
+                status: OrderStatus.AT_RISK,
+                notes: `Delivery Issue: ${issueReason} - ${description}`
+              }
+            });
+          }
+        }
+
+        // Record the sync event to ensure idempotency
+        await prisma.syncEvent.create({
+          data: {
+            clientUuid: event.clientUuid,
+            role: userRole,
+            payloadJson: event.data,
+            createdOfflineAt: new Date(event.timestamp),
+            syncedAt: new Date()
+          }
+        });
+      } catch (err) {
+        console.error(`Failed to process event ${event.clientUuid}:`, err);
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error syncing events:', error);
+    res.status(500).json({ error: 'Failed to sync events' });
+  }
+};

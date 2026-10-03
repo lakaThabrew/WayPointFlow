@@ -204,6 +204,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, screen]);
 
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      import('../services/driver').then(m => m.syncOfflineEvents());
+    };
+    const handleOffline = () => setIsOffline(true);
+
+    setIsOffline(!navigator.onLine);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
