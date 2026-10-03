@@ -83,8 +83,15 @@ export const completeDelivery = async (req: Request, res: Response) => {
     if (!stop) return res.status(404).json({ error: 'Stop not found' });
 
     // 1. Create PoD
-    const pod = await prisma.proofOfDelivery.create({
-      data: {
+    const pod = await prisma.proofOfDelivery.upsert({
+      where: { stopId },
+      update: {
+        receiverName,
+        signatureNote: signatureNote || '',
+        recordedAt: new Date(),
+        synced: true
+      },
+      create: {
         stopId,
         receiverName,
         signatureNote: signatureNote || '',
