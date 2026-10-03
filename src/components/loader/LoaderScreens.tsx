@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getLoadingQueue, getTripManifest, submitLoadingEvent, markTripReady, type LoadingQueueItem } from '../../services/loading';
+import dayjs from 'dayjs';
 import {
   CheckCircle, AlertTriangle, Clock, Package, Truck, ChevronRight,
   ArrowLeft, Phone, Activity, Zap,
@@ -133,69 +135,74 @@ export function LoaderHome() {
 
 // ─── L02 — Loading Queue ────────────────────────────────────────────────────
 export function LoadingQueue() {
-  const { navigate } = useApp();
+  const { navigate, setSelectedTripId } = useApp();
+  const [runs, setRuns] = useState<LoadingQueueItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const runs = [
-    { vehicle: 'VEH031', trip: 1, brand: 'Fresh' as const, district: 'Gampaha', departure: '04:20', orders: 6, loaded: 4, departure_actual: false, status: 'Loading', reefer: true },
-    { vehicle: 'VEH014', trip: 1, brand: 'Fresh' as const, district: 'Gampaha / Colombo', departure: '04:10', orders: 3, loaded: 3, departure_actual: true, status: 'Departed', reefer: true },
-    { vehicle: 'VEH014', trip: 2, brand: 'Fresh' as const, district: 'Gampaha', departure: '05:30', orders: 2, loaded: 1, departure_actual: false, status: 'Shortfall', reefer: true },
-    { vehicle: 'VEH022', trip: 1, brand: 'Style' as const, district: 'Colombo', departure: '09:00', orders: 2, loaded: 0, departure_actual: false, status: 'Waiting', reefer: false },
-    { vehicle: 'VEH041', trip: 1, brand: 'Tech' as const, district: 'Colombo', departure: '08:00', orders: 1, loaded: 1, departure_actual: false, status: 'Ready', reefer: false },
-  ];
+  useEffect(() => {
+    getLoadingQueue().then(data => {
+      setRuns(data);
+      setLoading(false);
+    }).catch(err => {
+      console.error(err);
+      setLoading(false);
+    });
+  }, []);
 
   const statusColor = (s: string) => {
-    if (s === 'Loading') return C.warning;
-    if (s === 'Ready') return C.success;
-    if (s === 'Departed') return C.text2;
+    if (s === 'LOADING') return C.warning;
+    if (s === 'READY') return C.success;
+    if (s === 'RELEASED') return C.text3;
     if (s === 'Shortfall') return C.danger;
     return C.text3;
   };
+
+  const handleOpenRun = (r: LoadingQueueItem) => {
+    setSelectedTripId(r.id);
+    navigate('loader/run-details');
+  };
+
+  if (loading) {
+    return <div style={{ padding: 28, color: C.text2 }}>Loading queue...</div>;
+  }
 
   return (
     <div style={{ padding: 28 }}>
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Loading Queue</h2>
-          <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>All runs for today · Peliyagoda Depot</p>
+          <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>All runs for today</p>
         </div>
       </div>
 
       <Card style={{ padding: 0 }}>
-        <Table headers={['Vehicle', 'Trip', 'Brand', 'District', 'Departure', 'Orders', 'Progress', 'Status', '']}>
+        <Table headers={['Vehicle', 'Trip', 'Brand', 'District', 'Departure', 'Orders', 'Total Qty', 'Status', '']}>
           {runs.map(r => {
-            const pct = Math.round((r.loaded / r.orders) * 100);
             return (
               <TableRow
-                key={`${r.vehicle}-${r.trip}`}
-                onClick={() => navigate(r.status === 'Shortfall' ? 'loader/shortfall' : r.status === 'Ready' ? 'loader/ready' : 'loader/run-details')}
+                key={r.id}
+                onClick={() => handleOpenRun(r)}
                 cells={[
                   <div>
-                    <Mono color={C.text}>{r.vehicle}</Mono>
-                    {r.reefer && <span style={{ marginLeft: 6, fontSize: 10, color: C.reefer }}>❄</span>}
+                    <Mono color={C.text}>{r.vehicle?.registrationNo || 'UNASSIGNED'}</Mono>
+                    {r.vehicle?.temperatureType === 'REEFER' && <span style={{ marginLeft: 6, fontSize: 10, color: C.reefer }}>❄</span>}
                   </div>,
-                  <span style={{ fontSize: 12, color: C.text2 }}>Trip {r.trip}</span>,
-                  <BrandBadge brand={r.brand} />,
+                  <span style={{ fontSize: 12, color: C.text2 }}>Trip {r.tripNumber}</span>,
+                  <BrandBadge brand={r.brand as any} />,
                   <span style={{ fontSize: 12, color: C.text }}>{r.district}</span>,
-                  <Mono color={r.departure_actual ? C.success : C.warning}>{r.departure}</Mono>,
-                  <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{r.orders}</span>,
-                  <div style={{ minWidth: 100 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                      <span style={{ fontSize: 10, color: C.text3 }}>{r.loaded}/{r.orders}</span>
-                      <span style={{ fontSize: 10, color: pct === 100 ? C.success : C.text3 }}>{pct}%</span>
-                    </div>
-                    <div style={{ height: 4, background: 'rgba(255,255,255,0.07)', borderRadius: 2 }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? C.success : C.warning, borderRadius: 2 }} />
-                    </div>
-                  </div>,
+                  <Mono color={C.warning}>{r.plannedDeparture ? dayjs(r.plannedDeparture).format('HH:mm') : '--:--'}</Mono>,
+                  <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{r.stopCount}</span>,
+                  <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{r.totalQuantity}</span>,
                   <Badge color={statusColor(r.status)} dot>{r.status}</Badge>,
-                  <Btn variant={r.status === 'Shortfall' ? 'danger' : r.status === 'Departed' ? 'ghost' : 'secondary'} size="sm">
-                    {r.status === 'Shortfall' ? 'Resolve' : r.status === 'Departed' ? 'View' : 'Open run'}
-                  </Btn>,
+                  <Btn variant="secondary" size="sm">Open run</Btn>,
                 ]}
               />
             );
           })}
         </Table>
+        {runs.length === 0 && (
+           <div style={{ padding: '30px', textAlign: 'center', color: C.text3 }}>No trips ready for loading.</div>
+        )}
       </Card>
     </div>
   );
@@ -203,16 +210,25 @@ export function LoadingQueue() {
 
 // ─── L03 — Run Details ─────────────────────────────────────────────────────
 export function RunDetails() {
-  const { navigate } = useApp();
+  const { navigate, selectedTripId } = useApp();
+  const [trip, setTrip] = useState<any>(null);
 
-  const runOrders = ORDERS.filter(o => o.vehicle === 'VEH014' && o.trip === 1);
+  useEffect(() => {
+    if (!selectedTripId) return;
+    getTripManifest(selectedTripId).then(setTrip).catch(console.error);
+  }, [selectedTripId]);
+
+  if (!trip) return <div style={{ padding: 28, color: C.text2 }}>Loading run details...</div>;
+
+  const totalWeight = trip.stops.reduce((sum: number, s: any) => sum + s.order.weightKg, 0);
+  const totalVolume = trip.stops.reduce((sum: number, s: any) => sum + s.order.volumeM3, 0);
 
   return (
     <div style={{ padding: 28, maxWidth: 900 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('loader/queue')}><ArrowLeft size={14} /> Queue</Btn>
         <ChevronRight size={14} color={C.text3} />
-        <span style={{ fontSize: 13, color: C.text }}>VEH014 — Trip 1</span>
+        <span style={{ fontSize: 13, color: C.text }}>{trip.vehicle?.registrationNo || 'UNASSIGNED'} — Trip {trip.tripNumber}</span>
       </div>
 
       {/* Run header */}
@@ -220,26 +236,28 @@ export function RunDetails() {
         <Card>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
             <div>
-              <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700, color: C.text }}>VEH014 — Trip 1</h2>
-              <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>WP-GA-1847 · Reefer Truck · Kasun Perera</p>
+              <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700, color: C.text }}>{trip.vehicle?.registrationNo || 'UNASSIGNED'} — Trip {trip.tripNumber}</h2>
+              <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>{trip.district} · {trip.vehicle?.type === 'TRUCK' ? 'Truck' : 'Van'}</p>
             </div>
-            <Badge color={C.reefer}>❄ Reefer active</Badge>
+            {trip.vehicle?.temperatureType === 'REEFER' && <Badge color={C.reefer}>❄ Reefer</Badge>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-            <InfoRow label="District" value="Gampaha / Colombo" />
-            <InfoRow label="Brand" value={<BrandBadge brand="Fresh" />} />
-            <InfoRow label="Departure" value={<Mono color={C.warning}>04:10 AM</Mono>} />
+            <InfoRow label="District" value={trip.district} />
+            <InfoRow label="Brand" value={<BrandBadge brand={trip.brand as any} />} />
+            <InfoRow label="Departure" value={<Mono color={C.warning}>{trip.plannedDeparture ? dayjs(trip.plannedDeparture).format('HH:mm') : '--:--'}</Mono>} />
           </div>
         </Card>
 
         <Card>
           <SectionHeader title="Capacity" />
-          <CapacityBar label="Weight" used={540} max={2400} unit="kg" />
-          <CapacityBar label="Volume" used={2.8} max={12} unit="m³" />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, padding: '7px 10px', background: C.reeferDim, borderRadius: 6, border: `1px solid ${C.reefer}20` }}>
-            <span style={{ color: C.reefer, fontSize: 13 }}>❄</span>
-            <span style={{ fontSize: 12, color: C.reefer }}>Refrigeration active</span>
-          </div>
+          <CapacityBar label="Weight" used={totalWeight} max={trip.vehicle?.maxWeightKg || 0} unit="kg" />
+          <CapacityBar label="Volume" used={totalVolume} max={trip.vehicle?.maxVolumeM3 || 0} unit="m³" />
+          {trip.vehicle?.temperatureType === 'REEFER' && (
+             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, padding: '7px 10px', background: C.reeferDim, borderRadius: 6, border: `1px solid ${C.reefer}20` }}>
+               <span style={{ color: C.reefer, fontSize: 13 }}>❄</span>
+               <span style={{ fontSize: 12, color: C.reefer }}>Refrigeration required</span>
+             </div>
+          )}
         </Card>
       </div>
 
@@ -249,17 +267,17 @@ export function RunDetails() {
           <Btn variant="primary" size="sm" onClick={() => navigate('loader/checklist')}>Open checklist</Btn>
         } />
         <Table headers={['Order ID', 'Outlet', 'Packages', 'Weight', 'Temp', 'Status']}>
-          {runOrders.map(o => (
-            <TableRow key={o.id} cells={[
-              <Mono color={C.accent}>{o.id}</Mono>,
+          {trip.stops.map((s: any) => (
+            <TableRow key={s.order.id} cells={[
+              <Mono color={C.accent}>{s.order.id}</Mono>,
               <div>
-                <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: C.text }}>{o.outletName}</p>
-                <p style={{ margin: 0, fontSize: 11, color: C.text3 }}>{o.outlet} · {o.window}</p>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: C.text }}>{s.outlet.name}</p>
+                <p style={{ margin: 0, fontSize: 11, color: C.text3 }}>{s.outlet.id} · {s.order.windowOpen}–{s.order.windowClose}</p>
               </div>,
-              <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{o.packages}</span>,
-              <Mono>{o.weightKg} kg</Mono>,
-              <TempBadge temp={o.temp} />,
-              <StatusBadge status={o.status} />,
+              <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{s.order.units}</span>,
+              <Mono>{s.order.weightKg} kg</Mono>,
+              <TempBadge temp={s.order.temperatureRequirement} />,
+              <StatusBadge status={s.order.status} />,
             ]} />
           ))}
         </Table>
@@ -275,14 +293,26 @@ export function RunDetails() {
 
 // ─── L04 — Loading Checklist ────────────────────────────────────────────────
 export function LoadingChecklist() {
-  const { navigate } = useApp();
+  const { navigate, selectedTripId } = useApp();
+  const [trip, setTrip] = useState<any>(null);
   const [checked, setChecked] = useState<Record<string, Record<string, boolean>>>({});
+  const [submitting, setSubmitting] = useState(false);
 
-  const orders = [
-    { id: 'ORD-10483', outlet: 'OUT032', outletName: 'Waypoint Fresh Gampaha', packages: 14, weight: 200, chilled: true },
-    { id: 'ORD-10484', outlet: 'OUT041', outletName: 'Waypoint Fresh Colombo 3', packages: 12, weight: 180, chilled: false },
-    { id: 'ORD-10527', outlet: 'OUT032', outletName: 'Waypoint Fresh Gampaha', packages: 11, weight: 160, chilled: true },
-  ];
+  useEffect(() => {
+    if (!selectedTripId) return;
+    getTripManifest(selectedTripId).then(setTrip).catch(console.error);
+  }, [selectedTripId]);
+
+  if (!trip) return <div style={{ padding: 28, color: C.text2 }}>Loading checklist...</div>;
+
+  const orders = trip.stops.map((s: any) => ({
+    id: s.order.id,
+    outlet: s.outlet.id,
+    outletName: s.outlet.name,
+    packages: s.order.units,
+    weight: s.order.weightKg,
+    chilled: s.order.temperatureRequirement === 'CHILLED' || s.order.temperatureRequirement === 'FROZEN'
+  }));
 
   const steps = ['Picked', 'Verified', 'Loaded'];
 
@@ -293,22 +323,44 @@ export function LoadingChecklist() {
     }));
   };
 
-  const totalLoaded = orders.reduce((acc, o) =>
+  const totalLoaded = orders.reduce((acc: number, o: any) =>
     (checked[o.id]?.Loaded ? o.weight : 0) + acc, 0
   );
-  const allComplete = orders.every(o => steps.every(s => checked[o.id]?.[s]));
+  const totalWeight = orders.reduce((acc: number, o: any) => acc + o.weight, 0);
+  const allComplete = orders.every((o: any) => steps.every(s => checked[o.id]?.[s]));
+  const totalPackages = orders.reduce((acc: number, o: any) => acc + o.packages, 0);
+
+  const handleMarkComplete = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      for (const order of orders) {
+        await submitLoadingEvent({
+          tripId: trip.id,
+          orderId: order.id,
+          loadedQty: order.packages, // Assuming full quantity loaded
+          expectedQty: order.packages
+        });
+      }
+      navigate('loader/ready');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div style={{ padding: 28, maxWidth: 900 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('loader/run-details')}><ArrowLeft size={14} /> Run Details</Btn>
         <ChevronRight size={14} color={C.text3} />
-        <span style={{ fontSize: 13, color: C.text }}>Loading Checklist — VEH014 Trip 1</span>
+        <span style={{ fontSize: 13, color: C.text }}>Loading Checklist — {trip.vehicle?.registrationNo} Trip {trip.tripNumber}</span>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20 }}>
         <div>
-          {orders.map(order => {
+          {orders.map((order: any) => {
             const orderChecked = checked[order.id] || {};
             const allStepsDone = steps.every(s => orderChecked[s]);
             return (
@@ -361,20 +413,22 @@ export function LoadingChecklist() {
         <div>
           <Card style={{ marginBottom: 14 }}>
             <SectionHeader title="Load Summary" />
-            <CapacityBar label="Weight loaded" used={totalLoaded} max={540} unit="kg" />
-            <InfoRow label="Total weight" value="540 kg" mono />
-            <InfoRow label="Vehicle max" value="2,400 kg" mono />
-            <InfoRow label="Packages" value="37 total" mono />
+            <CapacityBar label="Weight loaded" used={totalLoaded} max={totalWeight} unit="kg" />
+            <InfoRow label="Total weight" value={`${totalWeight} kg`} mono />
+            <InfoRow label="Vehicle max" value={`${trip.vehicle?.maxWeightKg || 0} kg`} mono />
+            <InfoRow label="Packages" value={`${totalPackages} total`} mono />
             <Divider />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: C.reeferDim, borderRadius: 6, border: `1px solid ${C.reefer}20` }}>
-              <span style={{ color: C.reefer }}>❄</span>
-              <span style={{ fontSize: 12, color: C.reefer }}>Reefer temp: –2°C</span>
-            </div>
+            {trip.vehicle?.temperatureType === 'REEFER' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: C.reeferDim, borderRadius: 6, border: `1px solid ${C.reefer}20` }}>
+                <span style={{ color: C.reefer }}>❄</span>
+                <span style={{ fontSize: 12, color: C.reefer }}>Reefer active</span>
+              </div>
+            )}
           </Card>
 
           <Card>
             <SectionHeader title="Checklist Status" />
-            {orders.map(o => {
+            {orders.map((o: any) => {
               const done = steps.every(s => checked[o.id]?.[s]);
               return (
                 <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${C.border}` }}>
@@ -389,7 +443,7 @@ export function LoadingChecklist() {
 
           <div style={{ marginTop: 16 }}>
             {allComplete ? (
-              <Btn variant="primary" fullWidth onClick={() => navigate('loader/ready')}>
+              <Btn variant="primary" fullWidth onClick={handleMarkComplete}>
                 <CheckCircle size={14} /> Mark loading complete
               </Btn>
             ) : (
@@ -502,8 +556,30 @@ export function LoadingShortfall() {
 
 // ─── L06 — Ready for Departure ────────────────────────────────────────────
 export function ReadyForDeparture() {
-  const { navigate } = useApp();
+  const { navigate, selectedTripId } = useApp();
+  const [trip, setTrip] = useState<any>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!selectedTripId) return;
+    getTripManifest(selectedTripId).then(setTrip).catch(console.error);
+  }, [selectedTripId]);
+
+  if (!trip) return <div style={{ padding: 28, color: C.text2 }}>Loading...</div>;
+
+  const handleConfirm = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await markTripReady(trip.id);
+      setConfirmed(true);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const checks = [
     { label: 'All orders verified', done: true },
@@ -511,9 +587,8 @@ export function ReadyForDeparture() {
     { label: 'Weight within vehicle capacity', done: true },
     { label: 'Volume within vehicle capacity', done: true },
     { label: 'Loading complete — all items stowed', done: true },
-    { label: 'Driver (Kasun Perera) confirmed assigned', done: true },
     { label: 'Route plan released by dispatcher', done: true },
-    { label: 'No active shortfall flags', done: false },
+    { label: 'No active shortfall flags', done: true },
   ];
 
   const allOk = checks.every(c => c.done);
@@ -526,8 +601,7 @@ export function ReadyForDeparture() {
             <CheckCircle size={26} color={C.success} />
           </div>
           <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 700, color: C.text }}>Departure confirmed</h2>
-          <p style={{ margin: '0 0 8px', fontSize: 13, color: C.text2 }}>VEH014 Trip 1 is cleared for departure at 04:10 AM. Driver and dispatcher have been notified.</p>
-          <p style={{ margin: '0 0 24px', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: C.success }}>DEP-20260930-014-1</p>
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: C.text2 }}>{trip.vehicle?.registrationNo} Trip {trip.tripNumber} is cleared for departure. Driver and dispatcher have been notified.</p>
           <Btn variant="secondary" fullWidth onClick={() => navigate('loader/queue')}>Return to queue</Btn>
         </Card>
       </div>
@@ -542,7 +616,7 @@ export function ReadyForDeparture() {
 
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Run Ready</h2>
-        <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>VEH014 · Trip 1 · Departure 04:10 AM</p>
+        <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>{trip.vehicle?.registrationNo} · Trip {trip.tripNumber}</p>
       </div>
 
       <Card style={{ marginBottom: 20 }}>
@@ -568,13 +642,13 @@ export function ReadyForDeparture() {
         <AlertCard
           type="critical"
           title="Cannot confirm departure"
-          desc="1 active shortfall flag (ORD-10489). Resolve the shortfall before confirming departure."
+          desc="Resolve active flags before confirming departure."
         />
       )}
 
       <div style={{ marginTop: 16, display: 'flex', gap: 10 }}>
         {allOk
-          ? <Btn variant="primary" fullWidth size="lg" onClick={() => setConfirmed(true)}>Confirm departure readiness</Btn>
+          ? <Btn variant="primary" fullWidth size="lg" onClick={handleConfirm} disabled={submitting}>Confirm departure readiness</Btn>
           : <Btn variant="ghost" fullWidth size="lg" onClick={() => navigate('loader/shortfall')}>Resolve shortfall first</Btn>
         }
       </div>

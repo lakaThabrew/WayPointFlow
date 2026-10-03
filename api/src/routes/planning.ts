@@ -3,8 +3,15 @@ import { prisma } from '../lib/prisma';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
 import { nextOperatingDay } from '../utils/cutoff';
+import { allocatePlan, getPlan, getConflicts, deferOrder, listAllOrders } from '../controllers/planningController';
 
 export const planningRouter = Router();
+
+planningRouter.get('/orders', authMiddleware, requireRole('DISPATCHER'), listAllOrders);
+planningRouter.post('/allocate', authMiddleware, requireRole('DISPATCHER'), allocatePlan);
+planningRouter.get('/plan', authMiddleware, requireRole('DISPATCHER'), getPlan);
+planningRouter.get('/conflicts', authMiddleware, requireRole('DISPATCHER'), getConflicts);
+planningRouter.post('/defer/:orderId', authMiddleware, requireRole('DISPATCHER'), deferOrder);
 
 // First role-protected business route — proves JWT + role middleware (TC-2.5).
 // Full planning/allocation endpoints arrive in Phase 4.

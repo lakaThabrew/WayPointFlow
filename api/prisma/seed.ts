@@ -88,13 +88,13 @@ async function main() {
 
   // ─── Reference fixtures ─────────────────────────────────────────────────────
   const districtTravel = [
-    { district: 'Gampaha', depot: 'Peliyagoda', depotToDistrictFreeflowMin: 35, interStopFreeflowMin: 15 },
-    { district: 'Colombo', depot: 'Peliyagoda', depotToDistrictFreeflowMin: 30, interStopFreeflowMin: 15 },
+    { district: 'Gampaha', depot: 'Peliyagoda', depotToDistrictFreeflowMin: 35, interStopFreeflowMin: 15, depotToDistrictKm: 12, interStopKm: 4 },
+    { district: 'Colombo', depot: 'Peliyagoda', depotToDistrictFreeflowMin: 30, interStopFreeflowMin: 15, depotToDistrictKm: 15, interStopKm: 5 },
   ];
   for (const d of districtTravel) {
     await prisma.districtTravel.upsert({
       where: { district_depot: { district: d.district, depot: d.depot } },
-      update: {},
+      update: { depotToDistrictKm: d.depotToDistrictKm, interStopKm: d.interStopKm },
       create: d,
     });
   }

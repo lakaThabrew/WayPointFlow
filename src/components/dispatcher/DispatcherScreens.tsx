@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertTriangle, Truck, Package, TrendingUp, Clock, CheckCircle,
   XCircle, ChevronRight, ArrowLeft, RefreshCw, MapPin, Filter,
@@ -14,6 +14,16 @@ import {
 import {
   ORDERS, VEHICLES, TRIPS, ALERTS, STATS, TODAY_DISPLAY,
 } from '../../data/mockData';
+import { planningApi, type PlanOrder, type PlanTrip, type PlanResponse, type ConflictItem } from '../../services/planning';
+import { STATUS_LABEL, TEMP_LABEL, formatDate } from '../../services/orders';
+import type { OrderStatus, TempType } from '../../types';
+
+/** "2026-10-01T03:30:00.000Z" → "03:30" */
+function hhmm(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 // ─── D01 — Dispatcher Overview ───────────────────────────────────────────────
 export function DispatcherOverview() {
@@ -237,15 +247,25 @@ export function DispatcherOrders() {
   const [filterStatus, setFilterStatus] = useState<string>('All');
   const [filterTemp, setFilterTemp] = useState<string>('All');
   const [search, setSearch] = useState('');
+  const [orders, setOrders] = useState<PlanOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    planningApi.orders()
+      .then((r) => setOrders(r.orders))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load orders'))
+      .finally(() => setLoading(false));
+  }, []);
 
   const brands = ['All', 'Fresh', 'Style', 'Tech'];
   const statuses = ['All', 'New', 'Confirmed', 'Planned', 'Loading', 'In Transit', 'Delivered', 'Deferred'];
   const temps = ['All', 'Chilled', 'Frozen', 'Ambient'];
 
-  const filtered = ORDERS.filter(o =>
+  const filtered = orders.filter(o =>
     (filterBrand === 'All' || o.brand === filterBrand) &&
-    (filterStatus === 'All' || o.status === filterStatus) &&
-    (filterTemp === 'All' || o.temp === filterTemp) &&
+    (filterStatus === 'All' || STATUS_LABEL[o.status] === filterStatus) &&
+    (filterTemp === 'All' || TEMP_LABEL[o.temperatureRequirement] === filterTemp) &&
     (search === '' || o.id.includes(search.toUpperCase()) || o.outletName.toLowerCase().includes(search.toLowerCase()))
   );
 
@@ -254,7 +274,7 @@ export function DispatcherOrders() {
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Orders</h2>
-          <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>30 Sep 2026 · {ORDERS.length} orders total</p>
+          <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>All brands · {orders.length} orders total</p>
         </div>
         <Btn variant="primary" onClick={() => navigate('dispatcher/planning')}>Open Planning →</Btn>
       </div>
@@ -302,6 +322,9 @@ export function DispatcherOrders() {
         </div>
       </Card>
 
+      {loading && <Card style={{ padding: 20 }}><p style={{ margin: 0, fontSize: 13, color: C.text3 }}>Loading orders…</p></Card>}
+      {!loading && error && <AlertCard type="critical" title="Could not load orders" desc={error} />}
+      {!loading && !error && (
       <Card style={{ padding: 0 }}>
         <Table headers={['Order ID', 'Outlet', 'Brand', 'District', 'Window', 'Temp', 'Weight', 'Vol', 'Status', 'Vehicle', '']}>
           {filtered.map(o => (
@@ -312,16 +335,16 @@ export function DispatcherOrders() {
                 <Mono color={C.accent}>{o.id}</Mono>,
                 <div>
                   <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: C.text }}>{o.outletName}</p>
-                  <p style={{ margin: 0, fontSize: 11, color: C.text3 }}>{o.outlet}</p>
+                  <p style={{ margin: 0, fontSize: 11, color: C.text3 }}>{o.outletId}</p>
                 </div>,
-                <BrandBadge brand={o.brand} />,
+                <BrandBadge brand={o.brand as 'Fresh' | 'Style' | 'Tech'} />,
                 <span style={{ fontSize: 12, color: C.text2 }}>{o.district}</span>,
-                <Mono>{o.window}</Mono>,
-                <TempBadge temp={o.temp} />,
+                <Mono>{o.windowOpen}–{o.windowClose}</Mono>,
+                <TempBadge temp={TEMP_LABEL[o.temperatureRequirement] as TempType} />,
                 <Mono>{o.weightKg} kg</Mono>,
                 <Mono>{o.volumeM3} m³</Mono>,
-                <StatusBadge status={o.status} />,
-                o.vehicle ? <Mono color={C.text2}>{o.vehicle}</Mono> : <span style={{ color: C.text3, fontSize: 12 }}>—</span>,
+                <StatusBadge status={STATUS_LABEL[o.status] as OrderStatus} />,
+                o.vehicleId ? <Mono color={C.text2}>{o.vehicleId}</Mono> : <span style={{ color: C.text3, fontSize: 12 }}>—</span>,
                 <ChevronRight size={14} color={C.text3} />,
               ]}
             />
@@ -331,6 +354,7 @@ export function DispatcherOrders() {
           <div style={{ padding: '32px 0', textAlign: 'center', color: C.text3, fontSize: 13 }}>No orders match the selected filters.</div>
         )}
       </Card>
+      )}
     </div>
   );
 }
@@ -440,11 +464,55 @@ export function OrderDetails() {
 // ─── D04 — Planning Workspace ─────────────────────────────────────────────────
 export function PlanningWorkspace() {
   const { navigate, setSelectedOrder } = useApp();
-  const [selectedTrip, setSelectedTrip] = useState<string>('VEH014-1');
+  const [selectedTrip, setSelectedTrip] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [queue, setQueue] = useState<PlanOrder[]>([]);
+  const [trips, setTrips] = useState<PlanTrip[]>([]);
+  const [deferrals, setDeferrals] = useState<PlanResponseDeferral[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState('');
 
-  const unplanned = ORDERS.filter(o => ['Confirmed', 'New'].includes(o.status));
-  const trip1 = TRIPS[0];
+  type PlanResponseDeferral = PlanResponse['deferrals'][number];
+
+  const load = async () => {
+    try {
+      const [q, p] = await Promise.all([planningApi.queue(), planningApi.plan()]);
+      setQueue(q.orders);
+      setTrips(p.trips);
+      setDeferrals(p.deferrals);
+      setError('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load planning data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const runAllocation = async () => {
+    setRunning(true);
+    setError('');
+    try {
+      await planningApi.allocate(); // engine plans the next operating day
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Allocation failed');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const onTrip = new Set(trips.flatMap((t) => t.stops.map((s) => s.orderId)));
+  const unplanned = queue.filter((o) => !onTrip.has(o.id));
+
+  const tripView = trips.map((t) => {
+    const weightKg = t.stops.reduce((s, x) => s + x.order.weightKg, 0);
+    const volumeM3 = t.stops.reduce((s, x) => s + x.order.volumeM3, 0);
+    const lastStop = t.stops[t.stops.length - 1];
+    return { trip: t, weightKg, volumeM3, eta: hhmm(lastStop?.plannedArrival) };
+  });
 
   return (
     <div style={{ padding: 28 }}>
@@ -452,22 +520,27 @@ export function PlanningWorkspace() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
           <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Plan Tomorrow's Deliveries</h2>
-          <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Wednesday, 1 October 2026 · Peliyagoda Depot</p>
+          <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Peliyagoda Depot · constraint engine allocation</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <Btn variant="secondary" onClick={() => navigate('dispatcher/constraint-conflict')}>View conflicts</Btn>
+          <Btn variant="secondary" loading={running} onClick={runAllocation}>
+            <RefreshCw size={14} /> {running ? 'Running…' : 'Run allocation'}
+          </Btn>
           <Btn variant="primary" onClick={() => navigate('dispatcher/dispatch-plan')}>Review final plan →</Btn>
         </div>
       </div>
 
+      {error && <div style={{ marginBottom: 16 }}><AlertCard type="critical" title="Planning error" desc={error} /></div>}
+
       {/* Summary row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 20 }}>
         {[
-          { label: 'Confirmed orders', value: STATS.ordersConfirmed, color: C.info },
-          { label: 'Vehicles available', value: 12, color: C.success },
-          { label: 'Reefer vehicles', value: 4, color: C.reefer },
-          { label: 'Orders at risk', value: 2, color: C.danger },
-          { label: 'Capacity utilization', value: '72%', color: C.warning },
+          { label: 'Queued orders', value: unplanned.length, color: C.info },
+          { label: 'Planned trips', value: trips.length, color: C.accent },
+          { label: 'Vehicles used', value: new Set(trips.map(t => t.vehicleId)).size, color: C.success },
+          { label: 'Deferred', value: deferrals.length, color: deferrals.length ? C.danger : C.success },
+          { label: 'Stops planned', value: trips.reduce((s, t) => s + t.stops.length, 0), color: C.warning },
         ].map(s => (
           <div key={s.label} style={{ padding: '12px 14px', background: C.card, borderRadius: 10, border: `1px solid ${C.border}` }}>
             <p style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, color: s.color, fontFamily: 'JetBrains Mono, monospace' }}>{s.value}</p>
@@ -484,7 +557,8 @@ export function PlanningWorkspace() {
             <p style={{ margin: 0, fontSize: 11, color: C.text3 }}>{unplanned.length} orders need assignment</p>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {ORDERS.filter(o => ['Confirmed', 'New'].includes(o.status)).map(o => (
+            {loading && <Card style={{ padding: 16 }}><p style={{ margin: 0, fontSize: 12, color: C.text3 }}>Loading queue…</p></Card>}
+            {!loading && unplanned.map(o => (
               <div
                 key={o.id}
                 onClick={() => { setSelectedOrder(o.id); navigate('dispatcher/order-details'); }}
@@ -498,32 +572,40 @@ export function PlanningWorkspace() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                   <Mono color={C.accent}>{o.id}</Mono>
-                  <BrandBadge brand={o.brand} />
+                  <BrandBadge brand={o.brand as 'Fresh' | 'Style' | 'Tech'} />
                 </div>
                 <p style={{ margin: '0 0 3px', fontSize: 12, color: C.text, fontWeight: 500 }}>{o.outletName}</p>
-                <p style={{ margin: '0 0 6px', fontSize: 11, color: C.text3 }}>{o.district} · {o.window}</p>
+                <p style={{ margin: '0 0 6px', fontSize: 11, color: C.text3 }}>{o.district} · {o.windowOpen}–{o.windowClose}</p>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <TempBadge temp={o.temp} />
-                  {o.vanOnly && <Badge color={C.warning}>Van</Badge>}
+                  <TempBadge temp={TEMP_LABEL[o.temperatureRequirement] as TempType} />
+                  <Badge color={C.text3}>{STATUS_LABEL[o.status]}</Badge>
                 </div>
               </div>
             ))}
-            {/* Deferred */}
-            <div
-              onClick={() => navigate('dispatcher/constraint-conflict')}
-              style={{
-                padding: '12px 14px', background: C.dangerDim,
-                border: `1px solid ${C.danger}25`, borderRadius: 10, cursor: 'pointer',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <Mono color={C.danger}>ORD-10482</Mono>
-                <BrandBadge brand="Fresh" />
+            {/* Deferred — from the allocation run */}
+            {deferrals.map(d => (
+              <div
+                key={d.id}
+                onClick={() => { setSelectedOrder(d.order.id); navigate('dispatcher/constraint-conflict'); }}
+                style={{
+                  padding: '12px 14px', background: C.dangerDim,
+                  border: `1px solid ${C.danger}25`, borderRadius: 10, cursor: 'pointer',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Mono color={C.danger}>{d.order.id}</Mono>
+                  <BrandBadge brand={d.order.brand as 'Fresh' | 'Style' | 'Tech'} />
+                </div>
+                <p style={{ margin: '0 0 3px', fontSize: 12, color: C.text, fontWeight: 500 }}>{d.order.outlet.name}</p>
+                <p style={{ margin: '0 0 6px', fontSize: 11, color: C.text3 }}>{d.order.district} · {d.order.windowOpen}–{d.order.windowClose}</p>
+                <Badge color={C.danger}>{d.source === 'MANUAL' ? 'Manually deferred' : 'No feasible vehicle'}</Badge>
               </div>
-              <p style={{ margin: '0 0 3px', fontSize: 12, color: C.text, fontWeight: 500 }}>Waypoint Fresh Kelaniya</p>
-              <p style={{ margin: '0 0 6px', fontSize: 11, color: C.text3 }}>Gampaha · 05:30–07:30</p>
-              <Badge color={C.danger}>No vehicle — unassignable</Badge>
-            </div>
+            ))}
+            {!loading && unplanned.length === 0 && deferrals.length === 0 && (
+              <Card style={{ padding: 16 }}>
+                <p style={{ margin: 0, fontSize: 12, color: C.text3 }}>Queue empty — run allocation after orders close.</p>
+              </Card>
+            )}
           </div>
         </div>
 
@@ -534,13 +616,10 @@ export function PlanningWorkspace() {
             <span style={{ fontSize: 11, color: C.text3 }}>Click a trip to inspect constraints</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {TRIPS.map(t => {
-              const key = `${t.vehicle}-${t.trip}`;
+            {tripView.map(({ trip: t, weightKg, volumeM3, eta }) => {
+              const key = t.id;
               const isSelected = selectedTrip === key;
-              const tripOrders = ORDERS.filter(o => t.orders.includes(o.id));
-              const weightPct = (t.weightKg / VEHICLES.find(v => v.id === t.vehicle)!.maxWeightKg) * 100;
-              const volPct = (t.volumeM3 / VEHICLES.find(v => v.id === t.vehicle)!.maxVolumeM3) * 100;
-              const vehicle = VEHICLES.find(v => v.id === t.vehicle)!;
+              const vehicle = t.vehicle;
 
               return (
                 <Card
@@ -555,29 +634,29 @@ export function PlanningWorkspace() {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <Mono color={C.text}>{t.vehicle}</Mono>
-                      <Badge color={C.text3}>Trip {t.trip}</Badge>
-                      {t.reefer && <Badge color={C.reefer}>❄ Reefer</Badge>}
+                      <Mono color={C.text}>{t.vehicleId}</Mono>
+                      <Badge color={C.text3}>Trip {t.tripNumber}</Badge>
+                      {vehicle.temperatureType === 'REEFER' && <Badge color={C.reefer}>❄ Reefer</Badge>}
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <StatusBadge status={t.status} />
-                      <BrandBadge brand={t.brand} />
+                      <Badge color={C.info}>{t.status}</Badge>
+                      <BrandBadge brand={t.brand as 'Fresh' | 'Style' | 'Tech'} />
                     </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                     <div>
-                      <CapacityBar label="Weight" used={t.weightKg} max={vehicle.maxWeightKg} unit="kg" />
-                      <CapacityBar label="Volume" used={t.volumeM3} max={vehicle.maxVolumeM3} unit="m³" />
+                      <CapacityBar label="Weight" used={weightKg} max={vehicle.maxWeightKg} unit="kg" />
+                      <CapacityBar label="Volume" used={volumeM3} max={vehicle.maxVolumeM3} unit="m³" />
                     </div>
                     <div style={{ fontSize: 12, color: C.text2 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <span>Departure</span>
-                        <Mono>{t.departure}</Mono>
+                        <Mono>{hhmm(t.plannedDeparture)}</Mono>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <span>ETA</span>
-                        <Mono color={C.accent}>{t.eta}</Mono>
+                        <Mono color={C.accent}>{eta}</Mono>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Stops</span>
@@ -587,19 +666,25 @@ export function PlanningWorkspace() {
                   </div>
 
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {tripOrders.map(o => (
-                      <div key={o.id} style={{
+                    {t.stops.map(s => (
+                      <div key={s.id} style={{
                         padding: '4px 10px', background: C.elevated, borderRadius: 6,
                         border: `1px solid ${C.border}`, fontSize: 11, color: C.text2,
                       }}>
-                        <Mono color={C.text}>{o.id}</Mono>
-                        <span style={{ marginLeft: 6 }}>{o.outlet}</span>
+                        <Mono color={C.text}>{s.orderId}</Mono>
+                        <span style={{ marginLeft: 6 }}>{s.outletId}</span>
                       </div>
                     ))}
                   </div>
                 </Card>
               );
             })}
+            {!loading && trips.length === 0 && (
+              <Card style={{ padding: 28, textAlign: 'center' }}>
+                <p style={{ margin: '0 0 6px', fontSize: 13, color: C.text2 }}>No trips planned yet</p>
+                <p style={{ margin: 0, fontSize: 12, color: C.text3 }}>Run the allocation to generate tomorrow's trips from the confirmed queue.</p>
+              </Card>
+            )}
           </div>
         </div>
 
@@ -609,40 +694,38 @@ export function PlanningWorkspace() {
             <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: C.text }}>Constraint Inspector</p>
           </div>
           {selectedTrip ? (() => {
-            const [vid, tripNum] = selectedTrip.split('-');
-            const trip = TRIPS.find(t => t.vehicle === vid && t.trip === Number(tripNum));
-            const vehicle = VEHICLES.find(v => v.id === vid);
-            if (!trip || !vehicle) return null;
-            const weightPct = Math.round((trip.weightKg / vehicle.maxWeightKg) * 100);
-            const volPct = Math.round((trip.volumeM3 / vehicle.maxVolumeM3) * 100);
-            const fuelPct = Math.round((vehicle.fuelUsedL / vehicle.weeklyFuelQuotaL) * 100);
+            const found = tripView.find(({ trip }) => trip.id === selectedTrip);
+            if (!found) return null;
+            const { trip, weightKg, volumeM3, eta } = found;
+            const vehicle = trip.vehicle;
+            const fuelL = 0; // daily fuel usage accrues as trips run — planned trip starts at 0
 
             return (
               <Card style={{ padding: 18 }}>
                 <div style={{ marginBottom: 14 }}>
                   <p style={{ margin: '0 0 2px', fontSize: 14, fontWeight: 700, color: C.text }}>{vehicle.id}</p>
-                  <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>{vehicle.type} · {vehicle.plate}</p>
+                  <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>{vehicle.type} · {vehicle.registrationNo}</p>
                 </div>
-                <CapacityBar label="Weight" used={trip.weightKg} max={vehicle.maxWeightKg} unit="kg" />
-                <CapacityBar label="Volume" used={trip.volumeM3} max={vehicle.maxVolumeM3} unit="m³" />
-                <CapacityBar label="Weekly fuel" used={vehicle.fuelUsedL} max={vehicle.weeklyFuelQuotaL} unit="L" color={C.warning} />
+                <CapacityBar label="Weight" used={weightKg} max={vehicle.maxWeightKg} unit="kg" />
+                <CapacityBar label="Volume" used={volumeM3} max={vehicle.maxVolumeM3} unit="m³" />
+                <CapacityBar label="Weekly fuel" used={fuelL} max={vehicle.weeklyFuelQuotaL} unit="L" color={C.warning} />
 
                 <Divider />
 
                 <div style={{ marginBottom: 12 }}>
                   <Label>Constraints</Label>
                 </div>
-                <ConstraintTag ok={vehicle.reefer} label={vehicle.reefer ? 'Reefer-capable' : 'Ambient only'} />
-                <ConstraintTag ok={vehicle.type.includes('Van')} label={vehicle.type.includes('Van') ? 'Van access' : 'Truck — standard docks only'} />
-                <ConstraintTag ok={true} label={`Depot: ${vehicle.depot}`} />
-                <ConstraintTag ok={fuelPct < 90} label={`Fuel: ${fuelPct}% of weekly quota`} />
+                <ConstraintTag ok={vehicle.temperatureType === 'REEFER'} label={vehicle.temperatureType === 'REEFER' ? 'Reefer-capable' : 'Ambient only'} />
+                <ConstraintTag ok={vehicle.type === 'VAN'} label={vehicle.type === 'VAN' ? 'Van access' : 'Truck — standard docks only'} />
+                <ConstraintTag ok={true} label={`District: ${trip.district}`} />
+                <ConstraintTag ok={true} label={`Brand: ${trip.brand} (single-brand trip)`} />
 
                 <Divider />
                 <div style={{ marginBottom: 10 }}>
                   <Label>Trip timing</Label>
                 </div>
-                <InfoRow label="Departure" value={trip.departure} mono />
-                <InfoRow label="ETA" value={trip.eta} mono />
+                <InfoRow label="Departure" value={hhmm(trip.plannedDeparture)} mono />
+                <InfoRow label="ETA (last stop)" value={eta} mono />
                 {trip.brand === 'Fresh' && (
                   <div style={{ marginTop: 10, padding: '8px 10px', background: C.accentDim, borderRadius: 6, fontSize: 11, color: C.accent, border: `1px solid ${C.accent}20` }}>
                     Fresh budget: 270 min/vehicle/day · within window
@@ -669,7 +752,41 @@ export function PlanningWorkspace() {
 
 // ─── D05 — Constraint Conflict ────────────────────────────────────────────────
 export function ConstraintConflict() {
-  const { navigate } = useApp();
+  const { navigate, selectedOrderId } = useApp();
+  const [conflicts, setConflicts] = useState<ConflictItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    planningApi.conflicts()
+      .then((r) => setConflicts(r.conflicts))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load conflicts'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const conflict = conflicts.find((c) => c.order.id === selectedOrderId) ?? conflicts[0] ?? null;
+
+  if (loading) {
+    return <div style={{ padding: 28 }}><Card style={{ padding: 20 }}><p style={{ margin: 0, fontSize: 13, color: C.text3 }}>Loading conflicts…</p></Card></div>;
+  }
+
+  if (error || !conflict) {
+    return (
+      <div style={{ padding: 28, maxWidth: 800 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <Btn variant="ghost" size="sm" onClick={() => navigate('dispatcher/planning')}><ArrowLeft size={14} /> Back to Planning</Btn>
+        </div>
+        <Card style={{ padding: 28, textAlign: 'center' }}>
+          <CheckCircle size={28} color={C.success} style={{ marginBottom: 10 }} />
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: C.text }}>No conflicts</p>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: C.text3 }}>{error || 'Every order in the queue has a feasible vehicle.'}</p>
+        </Card>
+      </div>
+    );
+  }
+
+  const o = conflict.order;
+  const allFail = conflict.vehicleAssessment.every((v) => v.failedRule !== 'Feasible');
 
   return (
     <div style={{ padding: 28, maxWidth: 800 }}>
@@ -687,8 +804,12 @@ export function ConstraintConflict() {
           <AlertTriangle size={22} color={C.danger} />
         </div>
         <div>
-          <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700, color: C.danger }}>No feasible vehicle available</h2>
-          <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Order ORD-10482 cannot be assigned to any available vehicle. All constraints must be satisfied for a valid assignment.</p>
+          <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700, color: C.danger }}>
+            {allFail ? 'No feasible vehicle available' : 'Deferred order'}
+          </h2>
+          <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>
+            Order {o.id} cannot be assigned to any available vehicle. All constraints must be satisfied for a valid assignment.
+          </p>
         </div>
       </div>
 
@@ -696,50 +817,40 @@ export function ConstraintConflict() {
         {/* Order */}
         <Card>
           <SectionHeader title="Affected Order" />
-          <InfoRow label="Order ID" value={<Mono color={C.danger}>ORD-10482</Mono>} />
-          <InfoRow label="Outlet" value="OUT047 — Waypoint Fresh Kelaniya" />
-          <InfoRow label="Brand" value={<BrandBadge brand="Fresh" />} />
-          <InfoRow label="Window" value="05:30–07:30" mono />
-          <InfoRow label="Temperature" value={<TempBadge temp="Chilled" />} />
-          <InfoRow label="Weight" value="120 kg" mono />
-          <InfoRow label="Vehicle access" value={<Badge color={C.warning}>Van only (narrow street)</Badge>} />
+          <InfoRow label="Order ID" value={<Mono color={C.danger}>{o.id}</Mono>} />
+          <InfoRow label="Outlet" value={`${o.outletId} — ${o.outlet.name}`} />
+          <InfoRow label="Brand" value={<BrandBadge brand={o.brand as 'Fresh' | 'Style' | 'Tech'} />} />
+          <InfoRow label="Window" value={`${o.windowOpen}–${o.windowClose}`} mono />
+          <InfoRow label="Temperature" value={<TempBadge temp={TEMP_LABEL[o.temperatureRequirement] as TempType} />} />
+          <InfoRow label="Weight" value={`${o.weightKg} kg`} mono />
+          {o.outlet.parkingConstraint === 'VAN_ONLY' && (
+            <InfoRow label="Vehicle access" value={<Badge color={C.warning}>Van only (narrow street)</Badge>} />
+          )}
         </Card>
 
-        {/* Requirements */}
+        {/* Requirements / explanation */}
         <Card>
-          <SectionHeader title="Vehicle Requirements" subtitle="All must be satisfied" />
-          <div style={{ marginTop: 4 }}>
-            {[
-              { ok: false, label: 'Reefer capability required (chilled goods)' },
-              { ok: false, label: 'Van-class vehicle required (van_only outlet)' },
-              { ok: false, label: 'Peliyagoda depot assignment' },
-              { ok: false, label: 'Fresh time budget: ≤270 min remaining' },
-              { ok: false, label: 'Weight capacity: 120 kg available' },
-            ].map(c => (
-              <ConstraintTag key={c.label} ok={c.ok} label={c.label} />
-            ))}
+          <SectionHeader title="Why it cannot be served" subtitle="Recorded deferral reason" />
+          <div style={{ padding: '10px 12px', background: C.dangerDim, borderRadius: 8, border: `1px solid ${C.danger}20`, marginBottom: 12 }}>
+            <p style={{ margin: 0, fontSize: 12, color: C.danger, fontWeight: 500 }}>
+              {conflict.latestDeferral?.reason ?? 'No feasible vehicle'}
+            </p>
           </div>
+          <InfoRow label="Deferred" value={conflict.latestDeferral ? formatDate(conflict.latestDeferral.decidedAt) : '—'} mono />
+          <InfoRow label="Source" value={<Badge color={C.text3}>{conflict.latestDeferral?.source === 'MANUAL' ? 'Dispatcher decision' : 'Allocator (auto)'}</Badge>} />
         </Card>
       </div>
 
-      {/* Why each vehicle fails */}
+      {/* Why each vehicle fails — live recompute from the engine */}
       <Card style={{ marginBottom: 20 }}>
-        <SectionHeader title="Vehicle Assessment" subtitle="Why no vehicle qualifies" />
-        <Table headers={['Vehicle', 'Type', 'Reefer', 'Van', 'Depot', 'Budget', 'Result']}>
-          {[
-            { id: 'VEH014', type: 'Reefer Truck', reefer: '✓', van: '✗', depot: '✓', budget: '✓', fail: 'Not a van' },
-            { id: 'VEH031', type: 'Reefer Van', reefer: '✓', van: '✓', depot: '✓', budget: '✗', fail: 'Budget exhausted' },
-            { id: 'VEH022', type: 'Dry Truck', reefer: '✗', van: '✗', depot: '✓', budget: '✓', fail: 'No reefer, not a van' },
-            { id: 'VEH041', type: 'Ambient Van', reefer: '✗', van: '✓', depot: '✓', budget: '✓', fail: 'No reefer' },
-          ].map(v => (
-            <TableRow key={v.id} cells={[
-              <Mono color={C.text}>{v.id}</Mono>,
-              <span style={{ fontSize: 12, color: C.text2 }}>{v.type}</span>,
-              <span style={{ color: v.reefer === '✓' ? C.success : C.danger, fontSize: 13 }}>{v.reefer}</span>,
-              <span style={{ color: v.van === '✓' ? C.success : C.danger, fontSize: 13 }}>{v.van}</span>,
-              <span style={{ color: v.depot === '✓' ? C.success : C.danger, fontSize: 13 }}>{v.depot}</span>,
-              <span style={{ color: v.budget === '✓' ? C.success : C.danger, fontSize: 13 }}>{v.budget}</span>,
-              <Badge color={C.danger}>{v.fail}</Badge>,
+        <SectionHeader title="Vehicle Assessment" subtitle="Recomputed live against the current fleet" />
+        <Table headers={['Vehicle', 'Result']}>
+          {conflict.vehicleAssessment.map(v => (
+            <TableRow key={v.vehicleId} cells={[
+              <Mono color={C.text}>{v.vehicleId}</Mono>,
+              v.failedRule === 'Feasible'
+                ? <Badge color={C.success}>Feasible</Badge>
+                : <Badge color={C.danger}>{v.failedRule}</Badge>,
             ]} />
           ))}
         </Table>
@@ -786,10 +897,13 @@ export function ConstraintConflict() {
 
 // ─── D06 — Deferral Decision ──────────────────────────────────────────────────
 export function DeferralDecision() {
-  const { navigate } = useApp();
+  const { navigate, selectedOrderId } = useApp();
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
   const [confirmed, setConfirmed] = useState(false);
+  const [deferralId, setDeferralId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   const reasons = [
     'Reefer capacity exhausted',
@@ -800,6 +914,22 @@ export function DeferralDecision() {
     'Order placed after cutoff',
     'Other',
   ];
+
+  const confirmDeferral = async () => {
+    if (!selectedOrderId) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const fullReason = notes.trim() ? `${reason} — ${notes.trim()}` : reason;
+      const res = await planningApi.defer(selectedOrderId, fullReason);
+      setDeferralId(res.deferral.id);
+      setConfirmed(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to record deferral');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (confirmed) {
     return (
@@ -817,11 +947,11 @@ export function DeferralDecision() {
             <CheckCircle size={26} color={C.success} />
           </div>
           <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: C.text }}>Deferral recorded</h2>
-          <p style={{ margin: '0 0 8px', fontSize: 13, color: C.text2 }}>ORD-10482 has been deferred. The record has been saved and the store manager will be notified.</p>
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: C.text2 }}>{selectedOrderId ?? 'The order'} has been deferred. The record has been saved and the store manager will be notified.</p>
           <div style={{ padding: '12px 16px', background: C.elevated, borderRadius: 8, marginBottom: 24, textAlign: 'left' }}>
             <InfoRow label="Reason" value={reason} />
-            <InfoRow label="Next run" value="01 Oct 2026 — 05:30 AM" mono />
-            <InfoRow label="Deferral ID" value="DEF-0089" mono />
+            <InfoRow label="Next run" value="Next operating day (re-enters planning automatically)" mono />
+            <InfoRow label="Deferral ID" value={deferralId || '—'} mono />
           </div>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
             <Btn variant="primary" onClick={() => navigate('dispatcher/planning')}>Return to planning</Btn>
@@ -847,14 +977,10 @@ export function DeferralDecision() {
         {/* Order summary */}
         <Card>
           <SectionHeader title="Order Being Deferred" />
-          <InfoRow label="Order" value={<Mono color={C.danger}>ORD-10482</Mono>} />
-          <InfoRow label="Outlet" value="OUT047 — Kelaniya" />
-          <InfoRow label="Brand" value={<BrandBadge brand="Fresh" />} />
-          <InfoRow label="Requested window" value="05:30–07:30" mono />
-          <InfoRow label="Temperature" value={<TempBadge temp="Chilled" />} />
+          <InfoRow label="Order" value={<Mono color={C.danger}>{selectedOrderId ?? '—'}</Mono>} />
           <Divider />
           <div style={{ padding: '10px 12px', background: C.dangerDim, borderRadius: 8, border: `1px solid ${C.danger}20` }}>
-            <p style={{ margin: 0, fontSize: 12, color: C.danger, fontWeight: 500 }}>No reefer van available. Reefer trucks cannot access this outlet (van_only).</p>
+            <p style={{ margin: 0, fontSize: 12, color: C.danger, fontWeight: 500 }}>This order will be removed from the current plan and recorded as deferred. It re-enters planning automatically on the next run.</p>
           </div>
         </Card>
 
@@ -908,15 +1034,17 @@ export function DeferralDecision() {
         <Btn
           variant="danger"
           size="lg"
-          disabled={!reason}
-          onClick={() => setConfirmed(true)}
+          disabled={!reason || !selectedOrderId}
+          loading={submitting}
+          onClick={confirmDeferral}
         >
-          Confirm deferral
+          {submitting ? 'Recording…' : 'Confirm deferral'}
         </Btn>
         <Btn variant="secondary" size="lg" onClick={() => navigate('dispatcher/planning')}>
           Return to plan
         </Btn>
       </div>
+      {error && <p style={{ margin: '10px 0 0', fontSize: 12, color: C.danger }}>{error}</p>}
       {!reason && (
         <p style={{ margin: '8px 0 0', fontSize: 12, color: C.text3 }}>A deferral reason must be selected before confirming.</p>
       )}
@@ -928,6 +1056,37 @@ export function DeferralDecision() {
 export function DispatchPlan() {
   const { navigate } = useApp();
   const [released, setReleased] = useState(false);
+  const [trips, setTrips] = useState<PlanTrip[]>([]);
+  const [deferrals, setDeferrals] = useState<PlanResponse['deferrals']>([]);
+  const [loading, setLoading] = useState(true);
+  const [releasing, setReleasing] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    planningApi.plan()
+      .then((p) => { setTrips(p.trips); setDeferrals(p.deferrals); })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load plan'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const planned = trips.filter((t) => t.status === 'PLANNED');
+  const servedOrders = trips.reduce((s, t) => s + t.stops.length, 0);
+  const vehiclesUsed = new Set(trips.map((t) => t.vehicleId)).size;
+
+  const releaseAll = async () => {
+    setReleasing(true);
+    setError('');
+    try {
+      for (const t of planned) {
+        await planningApi.releaseTrip(t.id);
+      }
+      setReleased(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Release failed');
+    } finally {
+      setReleasing(false);
+    }
+  };
 
   if (released) {
     return (
@@ -948,16 +1107,18 @@ export function DispatchPlan() {
     <div style={{ padding: 28, maxWidth: 1100 }}>
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Plan Ready</h2>
-        <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>30 September 2026 · Peliyagoda + Kandy · Review before releasing to loaders and drivers</p>
+        <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Peliyagoda · Review before releasing to loaders and drivers</p>
       </div>
+
+      {error && <div style={{ marginBottom: 16 }}><AlertCard type="critical" title="Plan error" desc={error} /></div>}
 
       {/* Summary */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 24 }}>
         {[
-          { label: 'Orders served', value: '39', color: C.success },
-          { label: 'Orders deferred', value: '3', color: C.danger },
-          { label: 'Trips planned', value: '8', color: C.accent },
-          { label: 'Vehicles assigned', value: '6', color: C.info },
+          { label: 'Orders served', value: String(servedOrders), color: C.success },
+          { label: 'Orders deferred', value: String(deferrals.length), color: deferrals.length ? C.danger : C.success },
+          { label: 'Trips planned', value: String(trips.length), color: C.accent },
+          { label: 'Vehicles assigned', value: String(vehiclesUsed), color: C.info },
         ].map(s => (
           <div key={s.label} style={{ padding: '14px 18px', background: C.card, borderRadius: 10, border: `1px solid ${C.border}` }}>
             <p style={{ margin: '0 0 4px', fontSize: 28, fontWeight: 700, color: s.color, fontFamily: 'JetBrains Mono, monospace' }}>{s.value}</p>
@@ -969,43 +1130,53 @@ export function DispatchPlan() {
       {/* Trip list */}
       <Card style={{ marginBottom: 20 }}>
         <SectionHeader title="Planned Trips" subtitle="All trips require loader confirmation before departure" />
-        <Table headers={['Vehicle', 'Driver', 'Depot', 'Brand', 'District', 'Stops', 'Departure', 'ETA', 'Type', 'Status']}>
-          {[
-            { vehicle: 'VEH014', driver: 'Kasun Perera', depot: 'Peliyagoda', brand: 'Fresh', district: 'Gampaha / Colombo', stops: 3, dep: '04:10', eta: '07:15', type: 'Reefer', status: 'On Route' },
-            { vehicle: 'VEH022', driver: 'Nimal Fernando', depot: 'Peliyagoda', brand: 'Style', district: 'Colombo', stops: 2, dep: '09:00', eta: '11:30', type: 'Ambient', status: 'Planned' },
-            { vehicle: 'VEH031', driver: 'Priya Senanayake', depot: 'Peliyagoda', brand: 'Fresh', district: 'Gampaha', stops: 4, dep: '04:20', eta: '07:30', type: 'Reefer', status: 'Loading' },
-            { vehicle: 'VEH041', driver: 'Dilan Rajapaksa', depot: 'Peliyagoda', brand: 'Tech', district: 'Colombo', stops: 2, dep: '08:00', eta: '10:00', type: 'Ambient', status: 'On Route' },
-          ].map(t => (
-            <TableRow key={t.vehicle} cells={[
-              <Mono color={C.text}>{t.vehicle}</Mono>,
-              <span style={{ fontSize: 12, color: C.text }}>{t.driver}</span>,
-              <span style={{ fontSize: 11, color: C.text2 }}>{t.depot}</span>,
-              <BrandBadge brand={t.brand as any} />,
-              <span style={{ fontSize: 12, color: C.text2 }}>{t.district}</span>,
-              <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{t.stops}</span>,
-              <Mono color={C.warning}>{t.dep}</Mono>,
-              <Mono color={C.accent}>{t.eta}</Mono>,
-              t.type === 'Reefer' ? <Badge color={C.reefer}>❄ Reefer</Badge> : <Badge color={C.text3}>Ambient</Badge>,
-              <StatusBadge status={t.status} />,
-            ]} />
-          ))}
-        </Table>
+        {loading ? (
+          <p style={{ padding: 20, margin: 0, fontSize: 13, color: C.text3 }}>Loading plan…</p>
+        ) : (
+          <Table headers={['Trip', 'Vehicle', 'Brand', 'District', 'Stops', 'Departure', 'ETA', 'Type', 'Status']}>
+            {trips.map(t => {
+              const lastStop = t.stops[t.stops.length - 1];
+              return (
+                <TableRow key={t.id} cells={[
+                  <Mono color={C.text3}>{t.id}</Mono>,
+                  <Mono color={C.text}>{t.vehicleId}</Mono>,
+                  <BrandBadge brand={t.brand as 'Fresh' | 'Style' | 'Tech'} />,
+                  <span style={{ fontSize: 12, color: C.text2 }}>{t.district}</span>,
+                  <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{t.stops.length}</span>,
+                  <Mono color={C.warning}>{hhmm(t.plannedDeparture)}</Mono>,
+                  <Mono color={C.accent}>{hhmm(lastStop?.plannedArrival)}</Mono>,
+                  t.vehicle.temperatureType === 'REEFER' ? <Badge color={C.reefer}>❄ Reefer</Badge> : <Badge color={C.text3}>Ambient</Badge>,
+                  <Badge color={t.status === 'PLANNED' ? C.info : C.success}>{t.status}</Badge>,
+                ]} />
+              );
+            })}
+          </Table>
+        )}
+        {!loading && trips.length === 0 && (
+          <div style={{ padding: '28px 0', textAlign: 'center', color: C.text3, fontSize: 13 }}>
+            No trips planned — run the allocation from the Planning Workspace first.
+          </div>
+        )}
       </Card>
 
       {/* Exceptions note */}
-      <div style={{ padding: '14px 18px', background: C.warningDim, border: `1px solid ${C.warning}25`, borderRadius: 10, marginBottom: 24 }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <AlertTriangle size={15} color={C.warning} style={{ marginTop: 1 }} />
-          <div>
-            <p style={{ margin: '0 0 3px', fontSize: 13, fontWeight: 600, color: C.warning }}>3 orders deferred</p>
-            <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>ORD-10482 (OUT047), ORD-10497 (OUT088), ORD-10501 (OUT112) are deferred. Reasons have been recorded. Store managers will be notified.</p>
+      {deferrals.length > 0 && (
+        <div style={{ padding: '14px 18px', background: C.warningDim, border: `1px solid ${C.warning}25`, borderRadius: 10, marginBottom: 24 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <AlertTriangle size={15} color={C.warning} style={{ marginTop: 1 }} />
+            <div>
+              <p style={{ margin: '0 0 3px', fontSize: 13, fontWeight: 600, color: C.warning }}>{deferrals.length} order{deferrals.length > 1 ? 's' : ''} deferred</p>
+              <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>
+                {deferrals.map((d) => `${d.order.id} (${d.order.outletId})`).join(', ')} — reasons recorded. Store managers will be notified.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div style={{ display: 'flex', gap: 12 }}>
-        <Btn variant="primary" size="lg" onClick={() => setReleased(true)}>
-          <Zap size={15} /> Release plan
+        <Btn variant="primary" size="lg" loading={releasing} disabled={planned.length === 0} onClick={releaseAll}>
+          <Zap size={15} /> {releasing ? 'Releasing…' : `Release plan (${planned.length} trips)`}
         </Btn>
         <Btn variant="secondary" size="lg" onClick={() => navigate('dispatcher/planning')}>
           Back to planning

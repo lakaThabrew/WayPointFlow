@@ -217,6 +217,9 @@ model Deferral {
   reason    String
   decidedBy String   @map("decided_by")
   decidedAt DateTime @map("decided_at")
+  // AUTO = written by the allocator (safe to replace on re-run);
+  // MANUAL = written by a dispatcher via POST /planning/defer/:orderId (never auto-deleted).
+  source    String   @default("AUTO") // AUTO | MANUAL
 
   order   Order @relation(fields: [orderId], references: [id])
   decider User  @relation(fields: [decidedBy], references: [id])
@@ -260,6 +263,8 @@ model DistrictTravel {
   depot                      String
   depotToDistrictFreeflowMin Int    @map("depot_to_district_freeflow_min")
   interStopFreeflowMin       Int    @map("inter_stop_freeflow_min")
+  depotToDistrictKm          Float  @default(0) @map("depot_to_district_km")
+  interStopKm                Float  @default(0) @map("inter_stop_km")
 
   @@unique([district, depot])
   @@map("district_travel")
