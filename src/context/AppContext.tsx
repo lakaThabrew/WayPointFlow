@@ -33,6 +33,8 @@ interface AppContextType {
   setSelectedOrder: (id: string | null) => void;
   selectedTripId: string | null;
   setSelectedTripId: (id: string | null) => void;
+  selectedStopId: string | null;
+  setSelectedStopId: (id: string | null) => void;
   isOffline: boolean;
   setOffline: (v: boolean) => void;
   showNotifications: boolean;
@@ -135,6 +137,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [selectedStopId, setSelectedStopId] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -208,6 +211,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         authRestoring: auth.restoring,
         selectedOrderId, setSelectedOrder: setSelectedOrderId,
         selectedTripId, setSelectedTripId,
+        selectedStopId, setSelectedStopId,
         isOffline, setOffline: setIsOffline,
         showNotifications, showSearch, showProfile,
         setShowNotifications, setShowSearch, setShowProfile,
