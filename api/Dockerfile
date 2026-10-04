@@ -5,6 +5,7 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY prisma ./prisma
 COPY src ./src
+ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
 RUN npx prisma generate && npm run build
 
 FROM node:20-alpine
