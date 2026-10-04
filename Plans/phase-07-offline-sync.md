@@ -3,7 +3,7 @@
 **Branch:** `lakmana-phase-07`
 **Target Day:** October 4, 2026
 **Depends on:** Phase 6 (driver route) ✅
-**Status:** ⚪ Not Started
+**Status:** 🟢 Implemented (2026-10-04 audit) — IndexedDB outbox, `POST /driver/sync` with `clientUuid` idempotency, and app-level online/offline state all live; queueing now follows the app's offline state (previously `navigator.onLine`, so the in-app offline toggle never queued); sync returns per-event results and only acknowledged events leave the outbox, so failures are retried; api + web build clean (0 TS errors)
 
 ---
 

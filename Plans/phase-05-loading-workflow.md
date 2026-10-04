@@ -3,7 +3,7 @@
 **Branch:** `lakmana-phase-05`
 **Target Day:** October 3, 2026
 **Depends on:** Phase 4 (dispatcher planning) ✅
-**Status:** ⚪ Not Started
+**Status:** 🟢 Implemented (2026-10-04 audit) — queue/manifest/events/ready endpoints live and role-guarded; checklist now captures real loaded quantities with shortfall flags and the "dispatch with shortfalls" confirmation; `markTripReady` enforces the atomic ready gate; loading/error/empty states added; api + web build clean (0 TS errors)
 
 ---
 

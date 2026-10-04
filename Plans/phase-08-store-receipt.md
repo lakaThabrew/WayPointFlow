@@ -3,7 +3,7 @@
 **Branch:** `lakmana-phase-08`
 **Target Day:** October 4, 2026
 **Depends on:** Phase 7 (offline mode) ✅
-**Status:** ⚪ Not Started
+**Status:** 🟢 Implemented (2026-10-04 audit) — `POST /orders/:id/receipt`, `GET /planning/live-ops`, `GET /planning/alerts`, and alert acknowledge all live and role-guarded; alerts are scoped by trip date (the old `arrivedAt` filter silently dropped issues reported from a PENDING stop) and mark-read returns 404 for an unknown stop; store tracking hero and live-ops read real API data with loading/error/empty states; api + web build clean (0 TS errors)
 
 ---
 
