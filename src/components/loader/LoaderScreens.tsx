@@ -556,7 +556,7 @@ export function LoadingShortfall() {
 
 // ─── L06 — Ready for Departure ────────────────────────────────────────────
 export function ReadyForDeparture() {
-  const { navigate, selectedTripId } = useApp();
+  const { navigate, selectedTripId, showToast } = useApp();
   const [trip, setTrip] = useState<any>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -574,8 +574,10 @@ export function ReadyForDeparture() {
     try {
       await markTripReady(trip.id);
       setConfirmed(true);
+      showToast('Trip marked as ready successfully!', 'success');
     } catch (e) {
       console.error(e);
+      showToast(e instanceof Error ? e.message : 'Failed to mark trip ready', 'error');
     } finally {
       setSubmitting(false);
     }

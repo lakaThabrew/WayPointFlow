@@ -1203,23 +1203,7 @@ export function OfflineBanner({ synced }: { synced?: string }) {
   );
 }
 
-// ─── Empty State ──────────────────────────────────────────────────────────────
-export function EmptyState({ icon, title, desc }: { icon?: ReactNode; title: string; desc?: string }) {
-  return (
-    <div style={{ textAlign: 'center', padding: '56px 20px', color: C.text3 }}>
-      {icon && (
-        <div style={{
-          marginBottom: 20, opacity: 0.3,
-          display: 'flex', justifyContent: 'center',
-        }}>
-          {icon}
-        </div>
-      )}
-      <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: C.text2 }}>{title}</p>
-      {desc && <p style={{ margin: '6px 0 0', fontSize: 13, color: C.text3 }}>{desc}</p>}
-    </div>
-  );
-}
+
 
 // ─── Divider ──────────────────────────────────────────────────────────────────
 export function Divider({ style }: { style?: CSSProperties }) {

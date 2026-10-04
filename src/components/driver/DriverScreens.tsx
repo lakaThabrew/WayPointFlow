@@ -354,7 +354,7 @@ export function StopDetails() {
 
 // ─── DR04 — Delivery Confirmation ─────────────────────────────────────────────
 export function DeliveryConfirmation() {
-  const { navigate, isOffline, selectedTripId, selectedStopId } = useApp();
+  const { navigate, isOffline, selectedTripId, selectedStopId, showToast } = useApp();
   const [stops, setStops] = useState<DriverStop[]>([]);
   const [qtyVerified, setQtyVerified] = useState(false);
   const [condition, setCondition] = useState('Good');
@@ -378,8 +378,10 @@ export function DeliveryConfirmation() {
       // Mock receiver name if left empty for MVP testing ease
       await completeDelivery(stop.id, receiverName || 'Store Manager', `${condition} - ${note}`);
       setConfirmed(true);
+      showToast('Delivery confirmed successfully!', 'success');
     } catch (e) {
       console.error(e);
+      showToast(e instanceof Error ? e.message : 'Failed to confirm delivery', 'error');
     } finally {
       setSubmitting(false);
     }

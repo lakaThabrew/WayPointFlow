@@ -425,7 +425,7 @@ export function CreateOrder() {
 
 // ─── SM04 — Order Review ──────────────────────────────────────────────────────
 export function OrderReview() {
-  const { navigate, orderDraft, placeOrder } = useApp();
+  const { navigate, orderDraft, placeOrder, showToast } = useApp();
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState('');
 
@@ -441,8 +441,11 @@ export function OrderReview() {
     setError('');
     try {
       await placeOrder(); // POSTs to the API and navigates to the confirmation screen
+      showToast('Order placed successfully!', 'success');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to place order');
+      const msg = e instanceof Error ? e.message : 'Failed to place order';
+      setError(msg);
+      showToast(msg, 'error');
       setPlacing(false);
     }
   };
