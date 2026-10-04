@@ -47,6 +47,7 @@ export interface ApiOrderDetailed extends ApiOrder {
     proofOfDelivery?: { receiverName: string; recordedAt: string } | null;
   }>;
   deferrals?: Array<{ id: string; reason: string; decidedAt: string }>;
+  receiptConfirmedAt?: string | null;
 }
 
 export const ordersApi = {
