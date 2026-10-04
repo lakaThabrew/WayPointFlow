@@ -195,21 +195,24 @@ export async function getLiveOps(req: Request, res: Response) {
   return res.json({ trips });
 }
 
-/** GET /planning/alerts — fetches active issues from drivers */
+/** GET /planning/alerts — unacknowledged driver-reported issues on today's trips */
 export async function getAlerts(req: Request, res: Response) {
   const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
-  
+
   const stops = await prisma.tripStop.findMany({
     where: {
       status: 'ISSUE',
       issueAcknowledged: false,
-      arrivedAt: { gte: dayStart } // roughly only today's alerts
+      // Scoped by trip date, not arrivedAt — an issue reported straight from PENDING
+      // has no arrival timestamp and would otherwise be silently dropped (TC-8.4).
+      trip: { date: { gte: dayStart } },
     },
     include: {
       outlet: true,
       trip: { include: { vehicle: true } },
       order: true
-    }
+    },
+    orderBy: { sequence: 'asc' }
   });
 
   return res.json({ alerts: stops });
@@ -219,12 +222,15 @@ export async function getAlerts(req: Request, res: Response) {
 export async function markAlertRead(req: Request, res: Response) {
   try {
     const { stopId } = req.params;
-    
+
+    const stop = await prisma.tripStop.findUnique({ where: { id: stopId } });
+    if (!stop) return res.status(404).json({ error: 'Stop not found' });
+
     const updated = await prisma.tripStop.update({
       where: { id: stopId },
       data: { issueAcknowledged: true }
     });
-    
+
     return res.json({ success: true, stop: updated });
   } catch (error) {
     console.error('Error acknowledging alert:', error);
