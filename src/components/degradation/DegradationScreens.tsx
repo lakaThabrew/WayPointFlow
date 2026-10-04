@@ -12,7 +12,7 @@ import {
 
 // ─── DG01 — Connection Lost ───────────────────────────────────────────────────
 export function ConnectionLost() {
-  const { navigate, setOffline } = useApp();
+  const { navigate, setOffline, pendingSync } = useApp();
 
   const handleGoOffline = () => {
     setOffline(true);
@@ -79,9 +79,17 @@ export function ConnectionLost() {
         {/* Pending actions */}
         <Card>
           <SectionHeader title="Pending local actions" subtitle="Will sync when connection returns" />
-          <div style={{ padding: '10px 12px', background: C.warningDim, borderRadius: 8, border: `1px solid ${C.warning}20` }}>
-            <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>No pending local actions yet. Deliveries you complete offline will appear here.</p>
-          </div>
+          {pendingSync > 0 ? (
+            <div style={{ padding: '10px 12px', background: C.warningDim, borderRadius: 8, border: `1px solid ${C.warning}20` }}>
+              <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>
+                {pendingSync} action{pendingSync === 1 ? '' : 's'} saved on this device — waiting for connection.
+              </p>
+            </div>
+          ) : (
+            <div style={{ padding: '10px 12px', background: C.warningDim, borderRadius: 8, border: `1px solid ${C.warning}20` }}>
+              <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>No pending local actions yet. Deliveries you complete offline will appear here.</p>
+            </div>
+          )}
         </Card>
 
         <div style={{ padding: '12px 14px', background: C.accentDim, borderRadius: 10, border: `1px solid ${C.accent}20` }}>
@@ -252,17 +260,36 @@ export function OfflineDelivery() {
 
 // ─── DG04 — Connection Restored ───────────────────────────────────────────────
 export function ConnectionRestored() {
-  const { navigate, setOffline } = useApp();
+  const { navigate, setOffline, pendingSync, runSync, showToast } = useApp();
   const [syncing, setSyncing] = useState(false);
-  const [synced, setSynced] = useState(false);
+  const [syncedCount, setSyncedCount] = useState<number | null>(null);
+  const [failedCount, setFailedCount] = useState(0);
 
   const handleSync = async () => {
     setSyncing(true);
-    await new Promise(r => setTimeout(r, 1800));
-    setSyncing(false);
-    setSynced(true);
-    setOffline(false);
+    try {
+      const outcome = await runSync();
+      if (outcome.error) {
+        showToast(outcome.error, 'error');
+        return;
+      }
+      if (outcome.processed === 0 && outcome.remaining === 0) {
+        showToast('Nothing pending sync', 'info');
+      } else if (outcome.failed > 0) {
+        showToast(`${outcome.processed} synced, ${outcome.failed} still pending`, 'error');
+      } else {
+        showToast(`${outcome.processed} record${outcome.processed === 1 ? '' : 's'} synced`, 'success');
+      }
+      setSyncedCount(outcome.processed);
+      setFailedCount(outcome.remaining);
+      if (outcome.remaining === 0) setOffline(false);
+    } finally {
+      setSyncing(false);
+    }
   };
+
+  const synced = syncedCount !== null && failedCount === 0;
+  const pendingLabel = pendingSync === 1 ? '1 update' : `${pendingSync} updates`;
 
   return (
     <div style={{ flex: 1, background: C.bg, display: 'flex', flexDirection: 'column' }}>
@@ -293,38 +320,38 @@ export function ConnectionRestored() {
                 <Wifi size={26} color={C.accent} />
               </div>
               <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 700, color: C.text }}>Connection restored</h2>
-              <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>3 updates ready to sync with Waypoint Operations</p>
+              <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>
+                {pendingSync > 0 ? `${pendingLabel} ready to sync with Waypoint Operations` : 'No updates are waiting to sync'}
+              </p>
             </div>
 
+            {pendingSync > 0 && (
             <Card style={{ marginBottom: 16 }}>
               <SectionHeader title="Pending updates" subtitle="Recorded offline — ready to sync" />
-              {[
-                { type: 'Delivery confirmation', detail: 'ORD-10483 · OUT032 · 06:47 AM', icon: <CheckCircle size={14} color={C.success} /> },
-                { type: 'Delivery confirmation', detail: 'ORD-10527 · OUT032 · 06:47 AM', icon: <CheckCircle size={14} color={C.success} /> },
-                { type: 'Timestamp record', detail: 'VEH014 · 06:29–06:47 offline period', icon: <LucideClock size={14} color={C.info} /> },
-              ].map((item, i) => (
+              {Array.from({ length: pendingSync }).map((_, i) => (
                 <div key={i} style={{
                   display: 'flex', gap: 12, alignItems: 'center',
                   padding: '10px 0',
-                  borderBottom: i < 2 ? `1px solid ${C.border}` : 'none',
+                  borderBottom: `1px solid ${C.border}`,
                 }}>
-                  {item.icon}
+                  <CheckCircle size={14} color={C.success} />
                   <div>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: C.text }}>{item.type}</p>
-                    <p style={{ margin: 0, fontSize: 11, color: C.text3 }}>{item.detail}</p>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: C.text }}>Offline driver action</p>
+                    <p style={{ margin: 0, fontSize: 11, color: C.text3 }}>Stored in IndexedDB with a client UUID</p>
                   </div>
                 </div>
               ))}
             </Card>
+            )}
 
             <Btn
               variant="primary"
               fullWidth
               size="lg"
               onClick={handleSync}
-              disabled={syncing}
+              disabled={syncing || pendingSync === 0}
             >
-              {syncing ? <><RefreshCw size={14} className="animate-spin" /> Syncing…</> : <><Upload size={14} /> Sync 3 updates</>}
+              {syncing ? <><RefreshCw size={14} className="animate-spin" /> Syncing…</> : <><Upload size={14} /> {pendingSync === 0 ? 'Nothing to sync' : `Sync ${pendingLabel}`}</>}
             </Btn>
           </>
         ) : (
@@ -339,21 +366,9 @@ export function ConnectionRestored() {
               <CheckCircle size={28} color={C.success} />
             </div>
             <h2 style={{ margin: '0 0 6px', fontSize: 20, fontWeight: 700, color: C.text }}>All updates synced</h2>
-            <p style={{ margin: '0 0 20px', fontSize: 13, color: C.text2 }}>3 records synchronized. Dispatcher can now see your updated delivery status.</p>
-
-            <div style={{ padding: '14px 16px', background: C.card, borderRadius: 10, border: `1px solid ${C.border}`, textAlign: 'left', marginBottom: 24 }}>
-              <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600, color: C.text3, textTransform: 'uppercase' }}>Synced records</p>
-              {[
-                'Delivery confirmation — ORD-10483',
-                'Delivery confirmation — ORD-10527',
-                'Offline period timestamp',
-              ].map((r, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: i < 2 ? `1px solid ${C.border}` : 'none' }}>
-                  <CheckCircle size={12} color={C.success} />
-                  <span style={{ fontSize: 12, color: C.text2 }}>{r}</span>
-                </div>
-              ))}
-            </div>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: C.text2 }}>
+              {syncedCount} record{syncedCount === 1 ? '' : 's'} synchronized. Dispatcher can now see your updated delivery status.
+            </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <Btn variant="primary" fullWidth onClick={() => navigate('driver/route')}>Continue route</Btn>

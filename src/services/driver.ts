@@ -25,6 +25,38 @@ export interface DriverStop {
   order: any;
 }
 
+/**
+ * The app's offline state is driven by AppContext (browser events plus the in-app
+ * "Offline Mode" toggle), so queueing must follow it rather than navigator.onLine —
+ * otherwise the demo toggle shows offline banners while actions still hit the network.
+ */
+let forcedOffline = false;
+
+export function setForcedOffline(value: boolean): void {
+  forcedOffline = value;
+}
+
+function isOffline(): boolean {
+  return forcedOffline || !navigator.onLine;
+}
+
+export interface SyncOutcome {
+  processed: number;
+  failed: number;
+  remaining: number;
+  error?: string;
+}
+
+/** Number of events still waiting in the local outbox. */
+export async function pendingSyncCount(): Promise<number> {
+  try {
+    const events = await getSyncEvents();
+    return events.length;
+  } catch {
+    return 0;
+  }
+}
+
 export async function getDriverActiveTrip(): Promise<DriverTrip | null> {
   return apiFetch<DriverTrip | null>('/driver/route');
 }
@@ -32,7 +64,7 @@ export async function getDriverActiveTrip(): Promise<DriverTrip | null> {
 
 
 export async function markStopArrival(stopId: string): Promise<any> {
-  if (!navigator.onLine) {
+  if (isOffline()) {
     const clientUuid = crypto.randomUUID();
     await saveSyncEvent({
       clientUuid,
@@ -48,7 +80,7 @@ export async function markStopArrival(stopId: string): Promise<any> {
 }
 
 export async function completeDelivery(stopId: string, receiverName: string, signatureNote: string): Promise<any> {
-  if (!navigator.onLine) {
+  if (isOffline()) {
     const clientUuid = crypto.randomUUID();
     await saveSyncEvent({
       clientUuid,
@@ -65,7 +97,7 @@ export async function completeDelivery(stopId: string, receiverName: string, sig
 }
 
 export async function reportIssue(stopId: string, issueReason: string, description: string): Promise<any> {
-  if (!navigator.onLine) {
+  if (isOffline()) {
     const clientUuid = crypto.randomUUID();
     await saveSyncEvent({
       clientUuid,
@@ -81,21 +113,52 @@ export async function reportIssue(stopId: string, issueReason: string, descripti
   });
 }
 
-export async function syncOfflineEvents(): Promise<void> {
-  const events = await getSyncEvents();
-  if (events.length === 0) return;
-  
+/**
+ * Pushes the local outbox to POST /driver/sync. Only the events the server
+ * acknowledged are removed, so anything it rejected stays queued for a later
+ * retry (TC-7.6 sync failure / TC-7.7 sync recovery). Never throws.
+ */
+export async function syncOfflineEvents(): Promise<SyncOutcome> {
+  let events;
   try {
-    await apiFetch('/driver/sync', {
+    events = await getSyncEvents();
+  } catch (error) {
+    return { processed: 0, failed: 0, remaining: 0, error: 'Could not read the offline outbox' };
+  }
+  if (events.length === 0) return { processed: 0, failed: 0, remaining: 0 };
+
+  try {
+    const res = await apiFetch<{
+      processed?: string[];
+      failed?: Array<{ clientUuid: string; error: string }>;
+    }>('/driver/sync', {
       method: 'POST',
       body: JSON.stringify({ events })
     });
-    
-    // Clear successfully synced events
-    for (const event of events) {
-      await deleteSyncEvent(event.clientUuid);
+
+    // Older servers acknowledge the whole batch without listing it; only trust an
+    // explicit per-event list when one is returned.
+    const acknowledged = Array.isArray(res.processed)
+      ? res.processed
+      : events.map((e) => e.clientUuid);
+
+    for (const clientUuid of acknowledged) {
+      await deleteSyncEvent(clientUuid);
     }
+
+    const failedCount = Array.isArray(res.failed) ? res.failed.length : 0;
+    return {
+      processed: acknowledged.length,
+      failed: failedCount,
+      remaining: events.length - acknowledged.length,
+    };
   } catch (error) {
     console.error('Failed to sync offline events', error);
+    return {
+      processed: 0,
+      failed: events.length,
+      remaining: events.length,
+      error: 'Sync failed — events are still saved on this device',
+    };
   }
 }

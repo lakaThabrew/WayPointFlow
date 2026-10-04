@@ -1207,24 +1207,64 @@ export function LiveOperations() {
   const { navigate } = useApp();
   const [trips, setTrips] = useState<any[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    planningApi.liveOps().then(r => {
-      setTrips(r.trips);
-      if (r.trips.length > 0 && !selectedVehicle) {
-        setSelectedVehicle(r.trips[0].vehicle.registrationNo);
-      }
-    }).catch(console.error);
+    const load = (initial: boolean) => {
+      planningApi.liveOps()
+        .then(r => {
+          setTrips(r.trips);
+          setError('');
+          setSelectedVehicle(prev => {
+            if (r.trips.length === 0) return null;
+            if (prev && r.trips.some((t: any) => t.vehicle.registrationNo === prev)) return prev;
+            return r.trips[0].vehicle.registrationNo;
+          });
+        })
+        .catch((e) => {
+          console.error(e);
+          if (initial) setError(e instanceof Error ? e.message : 'Could not load live operations');
+        })
+        .finally(() => { if (initial) setLoading(false); });
+    };
 
-    const timer = setInterval(() => {
-      planningApi.liveOps().then(r => setTrips(r.trips)).catch(console.error);
-    }, 5000);
+    load(true);
+    const timer = setInterval(() => load(false), 5000);
     return () => clearInterval(timer);
-  }, [selectedVehicle]);
+  }, []);
 
   const trip = trips.find(t => t.vehicle.registrationNo === selectedVehicle);
   const vehicle = trip?.vehicle;
   const currentStop = trip?.stops?.find((s: any) => s.status === 'PENDING' || s.status === 'ARRIVED');
+
+  if (loading) {
+    return <div className="flex items-center justify-center" style={{ height: '100%' }}><Spinner size={32} /></div>;
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
+        <AlertCard type="critical" title="Could not load live operations" desc={error} />
+        <Btn variant="primary" style={{ marginTop: 16 }} onClick={() => window.location.reload()}>
+          <RefreshCw size={14} /> Retry
+        </Btn>
+      </div>
+    );
+  }
+
+  if (trips.length === 0) {
+    return (
+      <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
+        <EmptyState
+          icon={Truck}
+          title="No trips in progress"
+          desc="Trips appear here once a loader marks them ready for departure."
+          action={<Btn variant="primary" onClick={() => navigate('dispatcher/planning')}>Open planning</Btn>}
+        />
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', height: '100%' }}>
@@ -1313,9 +1353,6 @@ export function LiveOperations() {
               <StatusBadge status={t.status} />
             </button>
           ))}
-          {trips.length === 0 && (
-             <p style={{ margin: 0, padding: 10, fontSize: 12, color: C.text3, background: `${C.surface}e0`, borderRadius: 8 }}>No active trips.</p>
-          )}
         </div>
       </div>
 
@@ -1342,7 +1379,12 @@ export function LiveOperations() {
                 <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>{currentStop.orderId}</p>
               </div>
               <InfoRow label="Planned arrival" value={hhmm(currentStop.plannedArrival)} mono />
-              <InfoRow label="Estimated arrival" value={hhmm(currentStop.plannedArrival)} mono />
+              <InfoRow
+                label={currentStop.status === 'ARRIVED' ? 'Actual arrival' : 'Estimated arrival'}
+                value={currentStop.status === 'ARRIVED' ? hhmm(currentStop.actualArrival) : hhmm(currentStop.plannedArrival)}
+                mono
+                accent={currentStop.status === 'ARRIVED' ? undefined : true}
+              />
               <InfoRow label="Window closes" value={currentStop.order.windowClose} mono />
             </>
           ) : (

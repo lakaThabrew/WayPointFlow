@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import {
-  C, Badge, StatusBadge, BrandBadge, TempBadge, Btn,
+  C, Badge, StatusBadge, BrandBadge, TempBadge, Btn, AlertCard,
   InfoRow, Timeline, Divider, Mono, OfflineBanner, Spinner, EmptyState,
 } from '../ui';
 import { getDriverActiveTrip, markStopArrival, completeDelivery, reportIssue, type DriverTrip, type DriverStop } from '../../services/driver';
@@ -15,16 +15,21 @@ import dayjs from 'dayjs';
 
 // ─── DR01 — Driver Home ───────────────────────────────────────────────────────
 export function DriverHome() {
-  const { navigate, isOffline, user, setSelectedTripId, setSelectedStopId } = useApp();
+  const { navigate, isOffline, user, setSelectedTripId, setSelectedStopId, pendingSync } = useApp();
   const [trip, setTrip] = useState<DriverTrip | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     getDriverActiveTrip().then(t => {
       setTrip(t);
       if (t) setSelectedTripId(t.id);
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch((e) => {
+      console.error(e);
+      setError(e instanceof Error ? e.message : 'Could not load your route');
+      setLoading(false);
+    });
   }, [setSelectedTripId]);
 
   const stops = trip?.stops || [];
@@ -43,7 +48,7 @@ export function DriverHome() {
       {/* Offline banner */}
       {isOffline && (
         <div style={{ padding: '10px 20px', background: `${C.warning}15`, borderBottom: `1px solid ${C.warning}30` }}>
-          <OfflineBanner synced="03:52 AM" />
+          <OfflineBanner synced={pendingSync > 0 ? `${pendingSync} pending sync` : 'Up to date'} />
         </div>
       )}
 
@@ -54,7 +59,12 @@ export function DriverHome() {
         <p style={{ margin: 0, fontSize: 12, color: C.text3 }}>{trip?.vehicle?.registrationNo || 'No vehicle'} · {isOffline ? '⚠ Offline mode' : 'Connected'}</p>
       </div>
 
-      {!trip && !loading && (
+      {error && (
+        <div style={{ padding: '0 20px 20px' }}>
+          <AlertCard type="critical" title="Could not load your route" desc={error} />
+        </div>
+      )}
+      {!trip && !loading && !error && (
         <EmptyState icon={Package} title="No active trips" desc="No trips are assigned to you for today." />
       )}
       {loading && (
@@ -155,18 +165,41 @@ export function DriverHome() {
 
 // ─── DR02 — Route Overview ────────────────────────────────────────────────────
 export function RouteOverview() {
-  const { navigate, isOffline, setSelectedStopId } = useApp();
+  const { navigate, isOffline, setSelectedStopId, setSelectedTripId } = useApp();
   const [stops, setStops] = useState<DriverStop[]>([]);
   const [trip, setTrip] = useState<DriverTrip | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     getDriverActiveTrip().then(t => {
       setTrip(t);
-      if (t) setStops(t.stops || []);
+      if (t) {
+        // StopDetails / DeliveryConfirmation re-read the trip from selectedTripId,
+        // so it has to be set here too or a direct visit spins forever.
+        setSelectedTripId(t.id);
+        setStops(t.stops || []);
+      }
+      setLoading(false);
+    }).catch((e) => {
+      console.error(e);
+      setError(e instanceof Error ? e.message : 'Could not load your route');
+      setLoading(false);
     });
-  }, []);
+  }, [setSelectedTripId]);
 
-  if (!trip) return <div className="flex justify-center py-20"><Spinner size={28} /></div>;
+  if (loading) return <div className="flex justify-center py-20"><Spinner size={28} /></div>;
+
+  if (error) {
+    return (
+      <div style={{ padding: 20 }}>
+        <AlertCard type="critical" title="Could not load your route" desc={error} />
+        <Btn variant="primary" fullWidth style={{ marginTop: 16 }} onClick={() => navigate('driver/home')}>Back to home</Btn>
+      </div>
+    );
+  }
+
+  if (!trip) return <EmptyState icon={Package} title="No active trip" desc="No trips are assigned to you right now." />;
 
   return (
     <div style={{ flex: 1, background: C.bg, display: 'flex', flexDirection: 'column' }}>
@@ -187,6 +220,9 @@ export function RouteOverview() {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 20px 24px' }}>
+        {stops.length === 0 && (
+          <EmptyState icon={MapPin} title="No stops on this trip" desc="The dispatcher has not sequenced any stops yet." />
+        )}
         {stops.map((stop, i) => {
           const isActive = stop.status === 'PENDING' || stop.status === 'ARRIVED';
           const isDone = stop.status === 'COMPLETED';
@@ -239,28 +275,56 @@ export function RouteOverview() {
 
 // ─── DR03 — Stop Details ──────────────────────────────────────────────────────
 export function StopDetails() {
-  const { navigate, isOffline, selectedTripId, selectedStopId } = useApp();
+  const { navigate, isOffline, selectedTripId, selectedStopId, showToast } = useApp();
   const [stops, setStops] = useState<DriverStop[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [arriving, setArriving] = useState(false);
 
   useEffect(() => {
-    if (selectedTripId) getDriverActiveTrip().then(t => { if(t) setStops(t.stops || []) });
+    if (!selectedTripId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError('');
+    getDriverActiveTrip()
+      .then(t => {
+        if (t) setStops(t.stops || []);
+        else setError('Your trip is no longer active.');
+      })
+      .catch((e) => {
+        console.error(e);
+        setError(e instanceof Error ? e.message : 'Could not load this stop');
+      })
+      .finally(() => setLoading(false));
   }, [selectedTripId]);
 
   const stop = stops.find(s => s.id === selectedStopId);
   const stopIndex = stops.findIndex(s => s.id === selectedStopId);
 
-  if (!stop) return <div className="flex justify-center py-20"><Spinner size={28} /></div>;
+  if (loading) return <div className="flex justify-center py-20"><Spinner size={28} /></div>;
+
+  if (!selectedStopId || !stop) {
+    return (
+      <div style={{ padding: 20 }}>
+        <AlertCard type="warning" title="No stop selected" desc={error || 'Open a stop from your route to see its delivery details.'} />
+        <Btn variant="primary" fullWidth style={{ marginTop: 16 }} onClick={() => navigate('driver/route')}>Back to route</Btn>
+      </div>
+    );
+  }
 
   const handleArrive = async () => {
     setArriving(true);
     try {
       if (stop.status === 'PENDING') {
         await markStopArrival(stop.id);
+        showToast(isOffline ? 'Arrival saved on device — pending sync' : 'Arrival recorded', isOffline ? 'info' : 'success');
       }
       navigate('driver/confirm');
     } catch (e) {
       console.error(e);
+      showToast(e instanceof Error ? e.message : 'Could not mark arrival', 'error');
     } finally {
       setArriving(false);
     }
@@ -354,8 +418,10 @@ export function StopDetails() {
 
 // ─── DR04 — Delivery Confirmation ─────────────────────────────────────────────
 export function DeliveryConfirmation() {
-  const { navigate, isOffline, selectedTripId, selectedStopId, showToast } = useApp();
+  const { navigate, isOffline, selectedTripId, selectedStopId, showToast, refreshPendingSync, pendingSync } = useApp();
   const [stops, setStops] = useState<DriverStop[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [qtyVerified, setQtyVerified] = useState(false);
   const [condition, setCondition] = useState('Good');
   const [receiverName, setReceiverName] = useState('');
@@ -364,21 +430,53 @@ export function DeliveryConfirmation() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (selectedTripId) getDriverActiveTrip().then(t => { if(t) setStops(t.stops || []) });
+    if (!selectedTripId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setLoadError('');
+    getDriverActiveTrip()
+      .then(t => {
+        if (t) setStops(t.stops || []);
+        else setLoadError('Your trip is no longer active.');
+      })
+      .catch((e) => {
+        console.error(e);
+        setLoadError(e instanceof Error ? e.message : 'Could not load this stop');
+      })
+      .finally(() => setLoading(false));
   }, [selectedTripId]);
 
   const stop = stops.find(s => s.id === selectedStopId);
+  const trimmedName = receiverName.trim();
 
-  if (!stop) return <div className="flex justify-center py-20"><Spinner size={28} /></div>;
+  if (loading) return <div className="flex justify-center py-20"><Spinner size={28} /></div>;
+
+  if (!stop) {
+    return (
+      <div style={{ padding: 20 }}>
+        <AlertCard type="warning" title="No stop selected" desc={loadError || 'Open a stop from your route to complete its delivery.'} />
+        <Btn variant="primary" fullWidth style={{ marginTop: 16 }} onClick={() => navigate('driver/route')}>Back to route</Btn>
+      </div>
+    );
+  }
 
   const handleConfirm = async () => {
     if (submitting) return;
+    if (!trimmedName) {
+      showToast('Receiver name is required for proof of delivery', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
-      // Mock receiver name if left empty for MVP testing ease
-      await completeDelivery(stop.id, receiverName || 'Store Manager', `${condition} - ${note}`);
+      await completeDelivery(stop.id, trimmedName, `${condition} - ${note}`);
       setConfirmed(true);
-      showToast('Delivery confirmed successfully!', 'success');
+      void refreshPendingSync();
+      showToast(
+        isOffline ? 'Saved on device — pending sync' : 'Delivery confirmed successfully!',
+        isOffline ? 'info' : 'success',
+      );
     } catch (e) {
       console.error(e);
       showToast(e instanceof Error ? e.message : 'Failed to confirm delivery', 'error');
@@ -441,7 +539,7 @@ export function DeliveryConfirmation() {
 
       {isOffline && (
         <div style={{ padding: '10px 20px', background: `${C.warning}12`, borderBottom: `1px solid ${C.warning}25` }}>
-          <OfflineBanner synced="03:52 AM" />
+          <OfflineBanner synced={pendingSync > 0 ? `${pendingSync} pending sync` : 'Up to date'} />
         </div>
       )}
 
@@ -495,13 +593,20 @@ export function DeliveryConfirmation() {
 
         {/* Proof of Delivery Details */}
         <div style={{ marginBottom: 16 }}>
-          <p style={{ margin: '0 0 6px', fontSize: 12, color: C.text2 }}>Receiver Name</p>
+          <p style={{ margin: '0 0 6px', fontSize: 12, color: C.text2 }}>Receiver Name <span style={{ color: C.danger }}>*</span></p>
           <input
             value={receiverName}
             onChange={e => setReceiverName(e.target.value)}
             placeholder="Name of person receiving..."
-            style={{ width: '100%', marginBottom: 10, padding: '10px 12px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.elevated, color: C.text }}
+            style={{
+              width: '100%', marginBottom: 10, padding: '10px 12px', borderRadius: 8,
+              border: `1px solid ${receiverName && !trimmedName ? C.danger + '60' : C.border}`,
+              background: C.elevated, color: C.text,
+            }}
           />
+          {receiverName && !trimmedName && (
+            <p style={{ margin: '-6px 0 10px', fontSize: 11, color: C.danger }}>Receiver name cannot be blank.</p>
+          )}
           <p style={{ margin: '0 0 6px', fontSize: 12, color: C.text2 }}>Note (optional)</p>
           <textarea
             rows={2}
@@ -527,7 +632,7 @@ export function DeliveryConfirmation() {
         <Btn
           variant="primary"
           fullWidth
-          disabled={!qtyVerified || submitting}
+          disabled={!qtyVerified || !trimmedName || submitting}
           onClick={handleConfirm}
         >
           {isOffline ? 'Save offline' : 'Confirm delivery'}
@@ -539,15 +644,32 @@ export function DeliveryConfirmation() {
 
 // ─── DR05 — Delivery Issue ─────────────────────────────────────────────────────
 export function DeliveryIssue() {
-  const { navigate, isOffline, selectedTripId, selectedStopId } = useApp();
+  const { navigate, isOffline, selectedTripId, selectedStopId, showToast, refreshPendingSync, pendingSync } = useApp();
   const [stops, setStops] = useState<DriverStop[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [issueType, setIssueType] = useState('');
   const [notes, setNotes] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (selectedTripId) getDriverActiveTrip().then(t => { if(t) setStops(t.stops || []) });
+    if (!selectedTripId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setLoadError('');
+    getDriverActiveTrip()
+      .then(t => {
+        if (t) setStops(t.stops || []);
+        else setLoadError('Your trip is no longer active.');
+      })
+      .catch((e) => {
+        console.error(e);
+        setLoadError(e instanceof Error ? e.message : 'Could not load this stop');
+      })
+      .finally(() => setLoading(false));
   }, [selectedTripId]);
 
   const stop = stops.find(s => s.id === selectedStopId);
@@ -561,7 +683,16 @@ export function DeliveryIssue() {
     'Other',
   ];
 
-  if (!stop) return <div style={{ padding: 20 }}>Loading...</div>;
+  if (loading) return <div className="flex justify-center py-20"><Spinner size={28} /></div>;
+
+  if (!stop) {
+    return (
+      <div style={{ padding: 20 }}>
+        <AlertCard type="warning" title="No stop selected" desc={loadError || 'Open a stop from your route to report an issue.'} />
+        <Btn variant="primary" fullWidth style={{ marginTop: 16 }} onClick={() => navigate('driver/route')}>Back to route</Btn>
+      </div>
+    );
+  }
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -569,8 +700,14 @@ export function DeliveryIssue() {
     try {
       await reportIssue(stop.id, issueType, notes);
       setSubmitted(true);
+      void refreshPendingSync();
+      showToast(
+        isOffline ? 'Issue saved on device — pending sync' : 'Issue reported to the dispatcher',
+        isOffline ? 'info' : 'success',
+      );
     } catch (e) {
       console.error(e);
+      showToast(e instanceof Error ? e.message : 'Failed to submit the issue', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -606,7 +743,7 @@ export function DeliveryIssue() {
 
       {isOffline && (
         <div style={{ padding: '10px 20px', background: `${C.warning}12`, borderBottom: `1px solid ${C.warning}25` }}>
-          <OfflineBanner synced="03:52 AM" />
+          <OfflineBanner synced={pendingSync > 0 ? `${pendingSync} pending sync` : 'Up to date'} />
         </div>
       )}
 

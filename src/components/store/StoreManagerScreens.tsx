@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import dayjs from 'dayjs';
 import {
-  CheckCircle, Package, Clock, ChevronRight, ArrowLeft,
+  CheckCircle, Package, Clock, ChevronRight, ArrowLeft, Truck,
   AlertTriangle, ShoppingCart, TrendingUp, Bell, MapPin, Navigation,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -32,14 +33,61 @@ function FetchState({ loading, error }: { loading: boolean; error: string }) {
   return null;
 }
 
+const ACTIVE_DELIVERY_STATUSES: ApiOrder['status'][] = ['LOADING', 'IN_TRANSIT', 'DELIVERED'];
+
+/**
+ * The store's live delivery, derived from real API data (TC-8.1): the outlet's
+ * active order plus its trip stop progress and planned arrival.
+ */
+function useActiveDelivery() {
+  const [order, setOrder] = useState<ApiOrderDetailed | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    ordersApi.list()
+      .then((r) => {
+        const active = r.orders.find((o) => ACTIVE_DELIVERY_STATUSES.includes(o.status));
+        if (!active) {
+          if (!cancelled) { setOrder(null); setLoading(false); }
+          return;
+        }
+        return ordersApi.get(active.id).then((detail) => {
+          if (!cancelled) setOrder(detail.order);
+        });
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load the active delivery');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  return { order, loading, error };
+}
+
 // ─── SM01 — Store Home ────────────────────────────────────────────────────────
 export function StoreHome() {
   const { navigate, setSelectedOrder } = useApp();
   const { orders, loading, error } = useMyOrders();
+  const active = useActiveDelivery();
 
   const activeCount = orders.filter((o) => ['NEW', 'CONFIRMED', 'PLANNED', 'LOADING', 'IN_TRANSIT', 'AT_RISK'].includes(o.status)).length;
   const pendingCount = orders.filter((o) => o.status === 'NEW').length;
   const deliveredCount = orders.filter((o) => o.status === 'DELIVERED').length;
+  const atRiskCount = orders.filter((o) => o.status === 'AT_RISK').length;
+
+  const liveOrder = active.order;
+  const liveStops = liveOrder?.tripStops ?? [];
+  const liveDone = liveStops.filter((s) => s.status === 'COMPLETED').length;
+  const liveNextStop = liveStops.find((s) => s.status === 'PENDING' || s.status === 'ARRIVED');
+  const liveEta = liveNextStop?.plannedArrival ?? liveStops[0]?.plannedArrival ?? null;
+  const liveProgress = liveStops.length ? Math.round((liveDone / liveStops.length) * 100) : 0;
+  const liveVehicle = liveOrder?.tripStops?.[0]?.trip?.vehicle?.registrationNo;
 
   return (
     <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
@@ -63,34 +111,70 @@ export function StoreHome() {
         </div>
       </div>
 
-      {/* Delivery status — hero card */}
+      {/* Delivery status — live from the API */}
       <div style={{
         padding: '20px 24px',
         background: 'linear-gradient(135deg, rgba(14,165,233,0.10) 0%, rgba(12,18,32,0.7) 100%)',
         border: `1px solid ${C.accent}30`, borderRadius: 16,
         marginBottom: 20,
       }}>
-        <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: C.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Today's delivery</p>
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-          <div>
-            <h3 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 800, color: C.text, letterSpacing: '-0.02em' }}>Arriving at 06:42 AM</h3>
-            <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>VEH014 · Kasun Perera · 25 packages</p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="status-dot active" />
-            <span style={{ fontSize: 13, fontWeight: 700, color: C.accent }}>In Transit</span>
-          </div>
-        </div>
-        <div style={{ marginTop: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontSize: 11, color: C.text3 }}>Route progress</span>
-            <span style={{ fontSize: 11, color: C.accent, fontWeight: 600 }}>70%</span>
-          </div>
-          <div style={{ height: 5, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: '70%', background: `linear-gradient(90deg, ${C.accent}, ${C.success})`, borderRadius: 3, boxShadow: `0 0 8px ${C.accent}50` }} className="progress-fill" />
-          </div>
-          <p style={{ margin: '6px 0 0', fontSize: 11, color: C.text3 }}>Departed 04:13 · 1 of 2 stops completed</p>
-        </div>
+        <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: C.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Current delivery</p>
+
+        {active.loading && (
+          <div className="flex justify-center py-6"><Spinner size={24} /></div>
+        )}
+
+        {!active.loading && active.error && (
+          <AlertCard type="critical" title="Could not load the active delivery" desc={active.error} />
+        )}
+
+        {!active.loading && !active.error && liveOrder && (
+          <>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+              <div>
+                <h3 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 800, color: C.text, letterSpacing: '-0.02em' }}>
+                  {liveEta ? `Arriving at ${dayjs(liveEta).format('HH:mm')}` : 'Arrival time pending'}
+                </h3>
+                <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>
+                  {liveVehicle ?? 'Vehicle pending'} · {liveOrder.units} packages · {liveOrder.id}
+                </p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className={liveOrder.status === 'DELIVERED' ? 'status-dot' : 'status-dot active'} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: liveOrder.status === 'DELIVERED' ? C.success : C.accent }}>
+                  {STATUS_LABEL[liveOrder.status]}
+                </span>
+              </div>
+            </div>
+            {liveStops.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: C.text3 }}>Route progress</span>
+                  <span style={{ fontSize: 11, color: C.accent, fontWeight: 600 }}>{liveProgress}%</span>
+                </div>
+                <div style={{ height: 5, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${liveProgress}%`, background: `linear-gradient(90deg, ${C.accent}, ${C.success})`, borderRadius: 3, boxShadow: `0 0 8px ${C.accent}50` }} className="progress-fill" />
+                </div>
+                <p style={{ margin: '6px 0 0', fontSize: 11, color: C.text3 }}>
+                  {liveDone} of {liveStops.length} stops completed · window {liveOrder.windowOpen}–{liveOrder.windowClose}
+                </p>
+              </div>
+            )}
+            <div style={{ marginTop: 14 }}>
+              <Btn variant="secondary" size="sm" onClick={() => { setSelectedOrder(liveOrder.id); navigate('store/tracking'); }}>
+                Track this delivery
+              </Btn>
+            </div>
+          </>
+        )}
+
+        {!active.loading && !active.error && !liveOrder && (
+          <EmptyState
+            icon={Truck}
+            title="No delivery in progress"
+            desc="Once the dispatcher plans and loads your order it will appear here with live status."
+          />
+        )}
       </div>
 
       {/* Stats */}
@@ -99,7 +183,7 @@ export function StoreHome() {
           { label: 'Active orders', value: String(activeCount), color: C.accent, action: () => navigate('store/orders') },
           { label: 'Pending confirm.', value: String(pendingCount), color: C.warning, action: () => navigate('store/orders') },
           { label: 'Delivered', value: String(deliveredCount), color: C.success, action: () => navigate('store/orders') },
-          { label: 'Open issues', value: '0', color: C.text3, action: () => {} },
+          { label: 'Open issues', value: String(atRiskCount), color: atRiskCount > 0 ? C.danger : C.text3, action: () => navigate('store/orders') },
         ].map(s => (
           <div
             key={s.label}
@@ -269,11 +353,29 @@ export function StoreOrders() {
   );
 }
 
+/**
+ * Mirrors the API cutoff rule (Mon–Sat operations, 16:00 cutoff) so the form
+ * defaults to a date the server will actually accept instead of a stale literal.
+ */
+function earliestDeliveryDate(now = new Date()): string {
+  const cutoffHour = 16;
+  const next = new Date(now);
+  do {
+    next.setDate(next.getDate() + 1);
+  } while (next.getDay() === 0);
+  if (now.getHours() >= cutoffHour) {
+    do {
+      next.setDate(next.getDate() + 1);
+    } while (next.getDay() === 0);
+  }
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
+}
+
 // ─── SM03 — Create Order ──────────────────────────────────────────────────────
 export function CreateOrder() {
   const { navigate, setOrderDraft } = useApp();
   const [brand, setBrand] = useState('Fresh');
-  const [date, setDate] = useState('2026-10-01');
+  const [date, setDate] = useState(earliestDeliveryDate);
   const [window, setWindow] = useState('05:00–07:30');
   const [temp, setTemp] = useState('Chilled');
   const [weight, setWeight] = useState('');
@@ -661,7 +763,7 @@ export function DeliveryTracking() {
 
 // ─── SM07 — Delivery Received ─────────────────────────────────────────────────
 export function DeliveryReceived() {
-  const { navigate, selectedOrderId } = useApp();
+  const { navigate, selectedOrderId, showToast } = useApp();
   const [order, setOrder] = useState<ApiOrderDetailed | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -687,8 +789,10 @@ export function DeliveryReceived() {
       setConfirming(true);
       await ordersApi.confirmReceipt(selectedOrderId);
       setConfirmed(true);
+      showToast('Receipt confirmed', 'success');
     } catch (e) {
-      alert('Failed to confirm receipt: ' + (e instanceof Error ? e.message : 'Unknown error'));
+      console.error(e);
+      showToast(e instanceof Error ? e.message : 'Failed to confirm receipt', 'error');
     } finally {
       setConfirming(false);
     }

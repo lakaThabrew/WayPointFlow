@@ -1,9 +1,10 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate as useRouterNavigate } from 'react-router-dom';
 import type { Screen, Role, AppUser } from '../types';
 import { ALERTS } from '../data/mockData';
 import { useAuth, type ApiRole, type AuthUser } from './AuthContext';
 import { ordersApi, type ApiOrder } from '../services/orders';
+import { pendingSyncCount, setForcedOffline, syncOfflineEvents } from '../services/driver';
 
 /** Draft collected on the Create Order screen, carried through Review → Place. */
 export interface OrderDraft {
@@ -42,6 +43,11 @@ interface AppContextType {
   setSelectedStopId: (id: string | null) => void;
   isOffline: boolean;
   setOffline: (v: boolean) => void;
+  /** Events sitting in the IndexedDB outbox awaiting sync (Phase 7). */
+  pendingSync: number;
+  refreshPendingSync: () => Promise<void>;
+  /** Pushes the outbox to the server; resolves with how many events landed. */
+  runSync: () => Promise<{ processed: number; failed: number; remaining: number; error?: string }>;
   showNotifications: boolean;
   showSearch: boolean;
   showProfile: boolean;
@@ -153,7 +159,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState(ALERTS);
   const [orderDraft, setOrderDraft] = useState<OrderDraft | null>(null);
   const [lastCreatedOrder, setLastCreatedOrder] = useState<ApiOrder | null>(null);
+  const [pendingSync, setPendingSync] = useState(0);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const refreshPendingSync = useCallback(async () => {
+    setPendingSync(await pendingSyncCount());
+  }, []);
+
+  const runSync = useCallback(async () => {
+    const outcome = await syncOfflineEvents();
+    setPendingSync(outcome.remaining);
+    return outcome;
+  }, []);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Math.random().toString(36).substring(7);
@@ -226,9 +243,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [role, screen]);
 
   useEffect(() => {
+    // AppContext owns the offline flag (browser events + the in-app toggle), so the
+    // driver service has to be told about it or offline actions would still hit the API.
+    setForcedOffline(isOffline);
+  }, [isOffline]);
+
+  useEffect(() => {
+    void refreshPendingSync();
+
     const handleOnline = () => {
       setIsOffline(false);
-      import('../services/driver').then(m => m.syncOfflineEvents());
+      void runSync().then(() => refreshPendingSync());
     };
     const handleOffline = () => setIsOffline(true);
 
@@ -240,6 +265,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -251,6 +277,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         selectedTripId, setSelectedTripId,
         selectedStopId, setSelectedStopId,
         isOffline, setOffline: setIsOffline,
+        pendingSync, refreshPendingSync, runSync,
         showNotifications, showSearch, showProfile,
         setShowNotifications, setShowSearch, setShowProfile,
         alerts, markAlertRead,
