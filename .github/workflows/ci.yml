@@ -26,8 +26,13 @@ jobs:
       - name: Install Frontend Dependencies
         run: npm ci
 
+      # tsc runs first: `vite build` alone strips types without checking them,
+      # so type errors would otherwise reach main unnoticed.
+      - name: Typecheck Frontend
+        run: npm run typecheck
+
       - name: Build Frontend
-        run: npm run build
+        run: npx vite build
 
       - name: Run Frontend Tests
         run: npm test --if-present
