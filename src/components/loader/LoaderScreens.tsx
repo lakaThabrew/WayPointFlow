@@ -3,28 +3,57 @@ import { getLoadingQueue, getTripManifest, submitLoadingEvent, markTripReady, ty
 import dayjs from 'dayjs';
 import {
   CheckCircle, AlertTriangle, Clock, Package, Truck, ChevronRight,
-  ArrowLeft, Phone, Activity, Zap,
+  ArrowLeft, Phone,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import {
   C, Card, Badge, StatusBadge, BrandBadge, TempBadge, Btn,
-  KpiCard, CapacityBar, AlertCard, Table, TableRow, SectionHeader,
-  InfoRow, Divider, ConstraintTag, Mono, Label,
-  AnimatedNumber, AiBadge, Sparkline, Spinner, EmptyState,
+  CapacityBar, AlertCard, Table, TableRow, SectionHeader,
+  InfoRow, Divider, Mono,
+  AnimatedNumber, Spinner, EmptyState,
 } from '../ui';
-import { ORDERS, VEHICLES, TRIPS, TODAY_DISPLAY } from '../../data/mockData';
+import { TODAY_DISPLAY } from '../../data/mockData';
 
 // ─── L01 — Loader Home ─────────────────────────────────────────────────────
 export function LoaderHome() {
-  const { navigate } = useApp();
+  const { navigate, setSelectedTripId } = useApp();
+  const [runs, setRuns] = useState<LoadingQueueItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    getLoadingQueue()
+      .then((data) => {
+        setRuns(data);
+        setError('');
+      })
+      .catch((e) => {
+        console.error(e);
+        setError(e instanceof Error ? e.message : 'Could not load the dock activity');
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const openRun = (r: LoadingQueueItem) => {
+    setSelectedTripId(r.id);
+    navigate('loader/run-details');
+  };
+
+  const waiting = runs.filter((r) => r.status === 'RELEASED').length;
+  const loadingRuns = runs.filter((r) => r.status === 'LOADING').length;
+  const ready = runs.filter((r) => r.status === 'READY').length;
 
   const statusCounts = [
-    { label: 'Waiting', count: 3, color: C.text3, action: () => navigate('loader/queue') },
-    { label: 'Loading', count: 2, color: C.warning, action: () => navigate('loader/queue') },
-    { label: 'Ready', count: 1, color: C.success, action: () => navigate('loader/ready') },
-    { label: 'Shortfall', count: 1, color: C.danger, action: () => navigate('loader/shortfall') },
-    { label: 'Departed', count: 3, color: C.text2, action: () => {} },
+    { label: 'Awaiting load', count: waiting, color: C.text3, action: () => navigate('loader/queue') },
+    { label: 'Loading', count: loadingRuns, color: C.warning, action: () => navigate('loader/queue') },
+    { label: 'Ready', count: ready, color: C.success, action: () => navigate('loader/ready') },
+    { label: 'Runs today', count: runs.length, color: C.accent, action: () => navigate('loader/queue') },
+    { label: 'Stops queued', count: runs.reduce((sum, r) => sum + r.stopCount, 0), color: C.text2, action: () => navigate('loader/queue') },
   ];
+
+  if (loading) {
+    return <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full flex justify-center py-20"><Spinner size={32} /></div>;
+  }
 
   return (
     <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full">
@@ -43,14 +72,19 @@ export function LoaderHome() {
         </div>
         <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
           <div style={{ textAlign: 'center' }}>
-            <p style={{ margin: 0, fontSize: 10, color: C.text3, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Loads Today</p>
+            <p style={{ margin: 0, fontSize: 10, color: C.text3, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Runs Today</p>
             <p style={{ margin: '4px 0 0', fontSize: 28, fontWeight: 800, color: C.warning, fontFamily: 'JetBrains Mono, monospace' }}>
-              <AnimatedNumber value={10} />
+              <AnimatedNumber value={runs.length} />
             </p>
           </div>
-          <Sparkline data={[6, 8, 7, 9, 8, 10, 10]} color={C.warning} height={36} width={70} />
         </div>
       </div>
+
+      {error && (
+        <div className="mb-5">
+          <AlertCard type="critical" title="Could not load the dock activity" desc={error} />
+        </div>
+      )}
 
       {/* Status cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6 stagger-children">
@@ -80,54 +114,52 @@ export function LoaderHome() {
         ))}
       </div>
 
-      {/* Shortfall alert */}
-      <AlertCard
-        type="critical"
-        title="Loading shortfall detected — ORD-10489"
-        desc="VEH014 Trip 2 — OUT078. Expected 240 kg, loaded 160 kg. Shortfall of 80 kg. Departure on hold."
-        action={<Btn variant="danger" size="sm" onClick={() => navigate('loader/shortfall')}>Resolve shortfall</Btn>}
-        time="03:48 AM"
-      />
-
       {/* Active dock */}
       <div style={{ marginTop: 20 }}>
-        <SectionHeader title="Current Dock Activity" subtitle="Active loading runs" action={
+        <SectionHeader title="Dock Activity" subtitle="Runs released to the loader queue" action={
           <Btn variant="primary" size="sm" onClick={() => navigate('loader/queue')}>Open loading queue</Btn>
         } />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {TRIPS.map(t => {
-            const vehicle = VEHICLES.find(v => v.id === t.vehicle)!;
-            const runStatus = t.status === 'On Route' ? 'Departed' : t.status === 'Loading' ? 'Loading' : 'Waiting';
-            const statusColor = runStatus === 'Departed' ? C.success : runStatus === 'Loading' ? C.warning : C.text3;
-
-            return (
-              <Card
-                key={`${t.vehicle}-${t.trip}`}
-                hover
-                onClick={() => navigate('loader/run-details')}
-                style={{ padding: 16 }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <div>
-                    <Mono color={C.text}>{t.vehicle}</Mono>
-                    <span style={{ marginLeft: 8, fontSize: 11, color: C.text3 }}>Trip {t.trip}</span>
+        {runs.length === 0 && !error ? (
+          <Card style={{ padding: 0 }}>
+            <EmptyState
+              icon={Truck}
+              title="No runs at the dock"
+              desc="Released trips land here automatically — ask the dispatcher to release a plan."
+            />
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {runs.map(r => {
+              const statusColor = r.status === 'READY' ? C.success : r.status === 'LOADING' ? C.warning : C.text3;
+              return (
+                <Card
+                  key={r.id}
+                  hover
+                  onClick={() => openRun(r)}
+                  style={{ padding: 16 }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div>
+                      <Mono color={C.text}>{r.vehicle?.registrationNo || 'UNASSIGNED'}</Mono>
+                      <span style={{ marginLeft: 8, fontSize: 11, color: C.text3 }}>Trip {r.tripNumber}</span>
+                    </div>
+                    <Badge color={statusColor} dot>{r.status}</Badge>
                   </div>
-                  <Badge color={statusColor} dot>{runStatus}</Badge>
-                </div>
-                <p style={{ margin: '0 0 4px', fontSize: 12, color: C.text, fontWeight: 500 }}>{t.district}</p>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                  <BrandBadge brand={t.brand} />
-                  {t.reefer && <Badge color={C.reefer}>❄</Badge>}
-                </div>
-                <CapacityBar label="Weight" used={t.weightKg} max={vehicle.maxWeightKg} unit="kg" />
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-                  <span style={{ fontSize: 11, color: C.text3 }}>Departs</span>
-                  <Mono color={C.warning}>{t.departure}</Mono>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+                  <p style={{ margin: '0 0 4px', fontSize: 12, color: C.text, fontWeight: 500 }}>{r.district}</p>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                    <BrandBadge brand={r.brand as any} />
+                    {r.vehicle?.temperatureType === 'REEFER' && <Badge color={C.reefer}>❄</Badge>}
+                  </div>
+                  <CapacityBar label="Stops" used={r.stopCount} max={Math.max(r.stopCount, 1)} unit="stops" />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+                    <span style={{ fontSize: 11, color: C.text3 }}>Departs</span>
+                    <Mono color={C.warning}>{r.plannedDeparture ? dayjs(r.plannedDeparture).format('HH:mm') : '--:--'}</Mono>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -238,7 +270,7 @@ export function RunDetails() {
 
   if (!selectedTripId) {
     return (
-      <div style={{ padding: 28, maxWidth: 900 }}>
+      <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
         <AlertCard type="warning" title="No trip selected" desc="Open a run from the loading queue to see its manifest." />
         <div style={{ marginTop: 16 }}>
           <Btn variant="primary" onClick={() => navigate('loader/queue')}>Back to queue</Btn>
@@ -249,7 +281,7 @@ export function RunDetails() {
 
   if (error) {
     return (
-      <div style={{ padding: 28, maxWidth: 900 }}>
+      <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
         <AlertCard type="critical" title="Could not load this run" desc={error} />
         <div style={{ marginTop: 16 }}>
           <Btn variant="primary" onClick={() => navigate('loader/queue')}>Back to queue</Btn>
@@ -353,7 +385,7 @@ export function LoadingChecklist() {
 
   if (!selectedTripId) {
     return (
-      <div style={{ padding: 28, maxWidth: 900 }}>
+      <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
         <AlertCard type="warning" title="No trip selected" desc="Open a run from the loading queue to start its checklist." />
         <div style={{ marginTop: 16 }}>
           <Btn variant="primary" onClick={() => navigate('loader/queue')}>Back to queue</Btn>
@@ -364,7 +396,7 @@ export function LoadingChecklist() {
 
   if (error) {
     return (
-      <div style={{ padding: 28, maxWidth: 900 }}>
+      <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
         <AlertCard type="critical" title="Could not load the checklist" desc={error} />
         <div style={{ marginTop: 16, display: 'flex', gap: 10 }}>
           <Btn variant="primary" onClick={() => navigate('loader/queue')}>Back to queue</Btn>
@@ -453,14 +485,14 @@ export function LoadingChecklist() {
   };
 
   return (
-    <div style={{ padding: 28, maxWidth: 900 }}>
+    <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('loader/run-details')}><ArrowLeft size={14} /> Run Details</Btn>
         <ChevronRight size={14} color={C.text3} />
         <span style={{ fontSize: 13, color: C.text }}>Loading Checklist — {trip.vehicle?.registrationNo} Trip {trip.tripNumber}</span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 lg:gap-5">
         <div>
           {orders.map((order: any) => {
             const orderChecked = checked[order.id] || {};
@@ -634,7 +666,7 @@ export function LoadingShortfall() {
   const [action, setAction] = useState<'none' | 'reported' | 'hold'>('none');
 
   return (
-    <div style={{ padding: 28, maxWidth: 700 }}>
+    <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('loader/checklist')}><ArrowLeft size={14} /> Checklist</Btn>
       </div>
@@ -665,7 +697,7 @@ export function LoadingShortfall() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
             <Card>
               <SectionHeader title="Affected Order" />
               <InfoRow label="Order ID" value={<Mono color={C.danger}>ORD-10489</Mono>} />
@@ -746,7 +778,7 @@ export function ReadyForDeparture() {
 
   if (!selectedTripId) {
     return (
-      <div style={{ padding: 28, maxWidth: 700 }}>
+      <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full">
         <AlertCard type="warning" title="No trip selected" desc="Open a run from the loading queue to confirm departure." />
         <div style={{ marginTop: 16 }}>
           <Btn variant="primary" onClick={() => navigate('loader/queue')}>Back to queue</Btn>
@@ -757,7 +789,7 @@ export function ReadyForDeparture() {
 
   if (error) {
     return (
-      <div style={{ padding: 28, maxWidth: 700 }}>
+      <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full">
         <AlertCard type="critical" title="Could not load this run" desc={error} />
         <div style={{ marginTop: 16 }}>
           <Btn variant="primary" onClick={() => navigate('loader/queue')}>Back to queue</Btn>
@@ -766,7 +798,7 @@ export function ReadyForDeparture() {
     );
   }
 
-  if (!trip) return <div style={{ padding: 28, color: C.text2 }}>Loading...</div>;
+  if (!trip) return <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full" style={{ color: C.text2 }}>Loading...</div>;
 
   const handleConfirm = async () => {
     if (submitting) return;
@@ -813,7 +845,7 @@ export function ReadyForDeparture() {
 
   if (confirmed) {
     return (
-      <div style={{ padding: 28, maxWidth: 600, textAlign: 'center' }}>
+      <div className="p-4 md:p-7 max-w-[600px] mx-auto w-full" style={{ textAlign: 'center' }}>
         <Card style={{ padding: '40px 32px', border: `1px solid ${C.success}30` }}>
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.successDim, border: `1px solid ${C.success}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <CheckCircle size={26} color={C.success} />
@@ -827,7 +859,7 @@ export function ReadyForDeparture() {
   }
 
   return (
-    <div style={{ padding: 28, maxWidth: 700 }}>
+    <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('loader/checklist')}><ArrowLeft size={14} /> Checklist</Btn>
       </div>

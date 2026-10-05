@@ -553,7 +553,7 @@ export function OrderReview() {
   };
 
   return (
-    <div style={{ padding: 28, maxWidth: 600 }}>
+    <div className="p-4 md:p-7 max-w-[600px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('store/create-order')}><ArrowLeft size={14} /> Edit order</Btn>
       </div>
@@ -609,7 +609,7 @@ export function OrderConfirmation() {
   const o = lastCreatedOrder;
 
   return (
-    <div style={{ padding: 28, maxWidth: 560 }}>
+    <div className="p-4 md:p-7 max-w-[560px] mx-auto w-full">
       <div style={{ textAlign: 'center', padding: '20px 0 32px' }}>
         <div style={{
           width: 64, height: 64, borderRadius: '50%',
@@ -678,7 +678,7 @@ export function DeliveryTracking() {
 
   if (loading || error || !order) {
     return (
-      <div style={{ padding: 28, maxWidth: 700 }}>
+      <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
           <Btn variant="ghost" size="sm" onClick={() => navigate('store/orders')}><ArrowLeft size={14} /> Orders</Btn>
         </div>
@@ -703,14 +703,14 @@ export function DeliveryTracking() {
   const vehicleReg = stop?.trip?.vehicle?.registrationNo ?? stop?.trip?.vehicleId;
 
   return (
-    <div style={{ padding: 28, maxWidth: 700 }}>
+    <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('store/orders')}><ArrowLeft size={14} /> Orders</Btn>
         <ChevronRight size={14} color={C.text3} />
         <Mono color={C.accent}>{order.id}</Mono>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
         <div>
           <Card style={{ marginBottom: 16 }}>
             <SectionHeader title={`Order ${order.id}`} />
@@ -800,7 +800,7 @@ export function DeliveryReceived() {
 
   if (loading || error || !order) {
     return (
-      <div style={{ padding: 28, maxWidth: 600 }}>
+      <div className="p-4 md:p-7 max-w-[600px] mx-auto w-full">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
           <Btn variant="ghost" size="sm" onClick={() => navigate('store/tracking')}><ArrowLeft size={14} /> Tracking</Btn>
         </div>
@@ -811,7 +811,7 @@ export function DeliveryReceived() {
 
   if (confirmed || order.receiptConfirmedAt) {
     return (
-      <div style={{ padding: 28, maxWidth: 520, textAlign: 'center' }}>
+      <div className="p-4 md:p-7 max-w-[520px] mx-auto w-full" style={{ textAlign: 'center' }}>
         <div style={{ padding: '40px 32px', background: C.card, border: `1px solid ${C.success}30`, borderRadius: 14 }}>
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.successDim, border: `1px solid ${C.success}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <CheckCircle size={26} color={C.success} />
@@ -826,7 +826,7 @@ export function DeliveryReceived() {
   }
 
   return (
-    <div style={{ padding: 28, maxWidth: 600 }}>
+    <div className="p-4 md:p-7 max-w-[600px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('store/tracking')}><ArrowLeft size={14} /> Tracking</Btn>
       </div>

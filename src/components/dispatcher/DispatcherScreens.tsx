@@ -29,13 +29,18 @@ function hhmm(iso: string | null | undefined): string {
 export function DispatcherOverview() {
   const { navigate } = useApp();
   const [liveAlerts, setLiveAlerts] = useState<any[]>([]);
+  const [alertsError, setAlertsError] = useState('');
 
   useEffect(() => {
-    planningApi.alerts().then(r => setLiveAlerts(r.alerts)).catch(console.error);
-    // In a real app we'd poll or use websockets
-    const timer = setInterval(() => {
-      planningApi.alerts().then(r => setLiveAlerts(r.alerts)).catch(console.error);
-    }, 5000);
+    const load = () => {
+      planningApi.alerts()
+        .then(r => { setLiveAlerts(r.alerts); setAlertsError(''); })
+        // Without this the panel would render "No active alerts" on a failed
+        // fetch — a false all-clear on the dispatcher's safety-critical panel.
+        .catch((e) => setAlertsError(e instanceof Error ? e.message : 'Could not load alerts'));
+    };
+    load();
+    const timer = setInterval(load, 5000);
     return () => clearInterval(timer);
   }, []);
 
@@ -132,7 +137,7 @@ export function DispatcherOverview() {
             <SectionHeader title="Fleet Status" subtitle="60 vehicles · Peliyagoda + Kandy" action={
               <Btn variant="text" size="sm" onClick={() => navigate('dispatcher/live-ops')}>View live map <ChevronRight size={12} /></Btn>
             } />
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 16 }}>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-4">
               {vehicleStatusGroups.map(g => (
                 <div key={g.label} style={{
                   padding: '12px 14px', background: C.elevated,
@@ -146,7 +151,7 @@ export function DispatcherOverview() {
             </div>
 
             {/* Vehicle cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {VEHICLES.slice(0, 3).map(v => (
                 <div
                   key={v.id}
@@ -206,25 +211,36 @@ export function DispatcherOverview() {
         {/* Alerts panel */}
         <div>
           <Card style={{ padding: 20, marginBottom: 16 }}>
-            <SectionHeader title="Active Alerts" subtitle={`${liveAlerts.length} unread`} />
+            <SectionHeader title="Active Alerts" subtitle={alertsError ? 'unavailable' : `${liveAlerts.length} unread`} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {liveAlerts.map(alert => (
-                <AlertCard
-                  key={alert.id}
-                  title={`Driver Issue: ${alert.outlet.name}`}
-                  desc={`Issue reported for order ${alert.orderId}`}
-                  type="critical"
-                  time={hhmm(alert.arrivedAt)}
-                  action={
-                    <Btn variant="text" size="sm" onClick={async () => {
-                      await planningApi.markAlertRead(alert.id);
-                      setLiveAlerts(prev => prev.filter(a => a.id !== alert.id));
-                    }}>Mark read <CheckCircle size={11} /></Btn>
-                  }
-                />
-              ))}
-              {liveAlerts.length === 0 && (
-                <EmptyState icon={CheckCircle} title="No active alerts" desc="Everything is running smoothly." />
+              {alertsError ? (
+                <AlertCard type="critical" title="Could not load alerts" desc={alertsError} />
+              ) : (
+                <>
+                  {liveAlerts.map(alert => (
+                    <AlertCard
+                      key={alert.id}
+                      title={`Driver Issue: ${alert.outlet.name}`}
+                      desc={`Issue reported for order ${alert.orderId}`}
+                      type="critical"
+                      time={hhmm(alert.arrivedAt)}
+                      action={
+                        <Btn variant="text" size="sm" onClick={async () => {
+                          try {
+                            await planningApi.markAlertRead(alert.id);
+                            setLiveAlerts(prev => prev.filter(a => a.id !== alert.id));
+                          } catch (e) {
+                            console.error(e);
+                            setAlertsError(e instanceof Error ? e.message : 'Could not dismiss the alert');
+                          }
+                        }}>Mark read <CheckCircle size={11} /></Btn>
+                      }
+                    />
+                  ))}
+                  {liveAlerts.length === 0 && (
+                    <EmptyState icon={CheckCircle} title="No active alerts" desc="Everything is running smoothly." />
+                  )}
+                </>
               )}
             </div>
           </Card>
@@ -531,7 +547,7 @@ export function PlanningWorkspace() {
   });
 
   return (
-    <div style={{ padding: 28 }}>
+    <div className="p-4 md:p-7">
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
@@ -550,7 +566,7 @@ export function PlanningWorkspace() {
       {error && <div style={{ marginBottom: 16 }}><AlertCard type="critical" title="Planning error" desc={error} /></div>}
 
       {/* Summary row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 20 }}>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mb-5">
         {[
           { label: 'Queued orders', value: unplanned.length, color: C.info },
           { label: 'Planned trips', value: trips.length, color: C.accent },
@@ -565,7 +581,7 @@ export function PlanningWorkspace() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr 300px', gap: 16, minHeight: 600 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr_300px] gap-4" style={{ minHeight: 600 }}>
         {/* Order Queue */}
         <div>
           <div style={{ marginBottom: 10 }}>
@@ -660,7 +676,7 @@ export function PlanningWorkspace() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                     <div>
                       <CapacityBar label="Weight" used={weightKg} max={vehicle.maxWeightKg} unit="kg" />
                       <CapacityBar label="Volume" used={volumeM3} max={vehicle.maxVolumeM3} unit="m³" />
@@ -783,12 +799,12 @@ export function ConstraintConflict() {
   const conflict = conflicts.find((c) => c.order.id === selectedOrderId) ?? conflicts[0] ?? null;
 
   if (loading) {
-    return <div style={{ padding: 28 }}><Card style={{ padding: 20 }}><p style={{ margin: 0, fontSize: 13, color: C.text3 }}>Loading conflicts…</p></Card></div>;
+    return <div className="p-4 md:p-7"><Card style={{ padding: 20 }}><p style={{ margin: 0, fontSize: 13, color: C.text3 }}>Loading conflicts…</p></Card></div>;
   }
 
   if (error || !conflict) {
     return (
-      <div style={{ padding: 28, maxWidth: 800 }}>
+      <div className="p-4 md:p-7 max-w-[800px] mx-auto w-full">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
           <Btn variant="ghost" size="sm" onClick={() => navigate('dispatcher/planning')}><ArrowLeft size={14} /> Back to Planning</Btn>
         </div>
@@ -805,7 +821,7 @@ export function ConstraintConflict() {
   const allFail = conflict.vehicleAssessment.every((v) => v.failedRule !== 'Feasible');
 
   return (
-    <div style={{ padding: 28, maxWidth: 800 }}>
+    <div className="p-4 md:p-7 max-w-[800px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('dispatcher/planning')}><ArrowLeft size={14} /> Back to Planning</Btn>
       </div>
@@ -829,7 +845,7 @@ export function ConstraintConflict() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
         {/* Order */}
         <Card>
           <SectionHeader title="Affected Order" />
@@ -949,7 +965,7 @@ export function DeferralDecision() {
 
   if (confirmed) {
     return (
-      <div style={{ padding: 28, maxWidth: 600 }}>
+      <div className="p-4 md:p-7 max-w-[600px] mx-auto w-full">
         <div style={{
           textAlign: 'center', padding: '40px 32px',
           background: C.card, border: `1px solid ${C.border}`, borderRadius: 14,
@@ -979,7 +995,7 @@ export function DeferralDecision() {
   }
 
   return (
-    <div style={{ padding: 28, maxWidth: 800 }}>
+    <div className="p-4 md:p-7 max-w-[800px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('dispatcher/constraint-conflict')}><ArrowLeft size={14} /> Back to conflict</Btn>
       </div>
@@ -989,7 +1005,7 @@ export function DeferralDecision() {
         <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>This decision will be recorded. The store manager will be notified of the deferral.</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
         {/* Order summary */}
         <Card>
           <SectionHeader title="Order Being Deferred" />
@@ -1019,7 +1035,7 @@ export function DeferralDecision() {
       {/* Reason */}
       <Card style={{ marginBottom: 20 }}>
         <SectionHeader title="Deferral Reason" subtitle="Required — select the primary reason" />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3.5">
           {reasons.map(r => (
             <button
               key={r}
@@ -1106,7 +1122,7 @@ export function DispatchPlan() {
 
   if (released) {
     return (
-      <div style={{ padding: 28, maxWidth: 600, textAlign: 'center' }}>
+      <div className="p-4 md:p-7 max-w-[600px] mx-auto w-full" style={{ textAlign: 'center' }}>
         <div style={{ padding: '40px 32px', background: C.card, border: `1px solid ${C.success}30`, borderRadius: 14 }}>
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.successDim, border: `1px solid ${C.success}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <CheckCircle size={26} color={C.success} />
@@ -1120,7 +1136,7 @@ export function DispatchPlan() {
   }
 
   return (
-    <div style={{ padding: 28, maxWidth: 1100 }}>
+    <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full">
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Plan Ready</h2>
         <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Peliyagoda · Review before releasing to loaders and drivers</p>
@@ -1129,7 +1145,7 @@ export function DispatchPlan() {
       {error && <div style={{ marginBottom: 16 }}><AlertCard type="critical" title="Plan error" desc={error} /></div>}
 
       {/* Summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 24 }}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-6">
         {[
           { label: 'Orders served', value: String(servedOrders), color: C.success },
           { label: 'Orders deferred', value: String(deferrals.length), color: deferrals.length ? C.danger : C.success },
@@ -1267,9 +1283,11 @@ export function LiveOperations() {
   }
 
   return (
-    <div style={{ display: 'flex', height: '100%' }}>
+    // Stacks on tablet/mobile: the map keeps a usable height and the vehicle
+    // panel drops underneath instead of squeezing the map into a sliver.
+    <div className="flex flex-col lg:flex-row" style={{ height: '100%', minHeight: 480 }}>
       {/* Map area */}
-      <div style={{ flex: 1, position: 'relative', background: C.elevated, overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 320, position: 'relative', background: C.elevated, overflow: 'hidden' }}>
         {/* Simulated map */}
         <div style={{ position: 'absolute', inset: 0 }} className="wp-grid-lines" />
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 30% 40%, rgba(56,189,248,0.05) 0%, transparent 60%)' }} />
@@ -1357,7 +1375,7 @@ export function LiveOperations() {
       </div>
 
       {/* Vehicle panel */}
-      <div style={{ width: 300, background: C.surface, borderLeft: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+      <div className="w-full lg:w-[300px] shrink-0" style={{ background: C.surface, borderLeft: `1px solid ${C.border}`, borderTop: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
         <div style={{ padding: 20, borderBottom: `1px solid ${C.border}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <Mono color={C.text}>{vehicle?.registrationNo || 'No vehicle'}</Mono>
@@ -1422,7 +1440,7 @@ export function DeliveryException() {
   const { navigate } = useApp();
 
   return (
-    <div style={{ padding: 28, maxWidth: 800 }}>
+    <div className="p-4 md:p-7 max-w-[800px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('dispatcher/live-ops')}><ArrowLeft size={14} /> Live Operations</Btn>
         <ChevronRight size={14} color={C.text3} />
@@ -1441,7 +1459,7 @@ export function DeliveryException() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
         <Card>
           <SectionHeader title="Situation" />
           <InfoRow label="Vehicle" value={<Mono color={C.text}>VEH014</Mono>} />
@@ -1497,14 +1515,14 @@ export function DeliveryException() {
 // ─── D10 — Forecast ───────────────────────────────────────────────────────────
 export function Forecast() {
   return (
-    <div style={{ padding: 28 }}>
+    <div className="p-4 md:p-7">
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Upcoming Demand</h2>
         <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Capacity planning intelligence · Peliyagoda + Kandy</p>
       </div>
 
       {/* Forecast cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 28 }}>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-7">
         {[
           {
             period: 'Next Week', dates: '5–11 Oct 2026',
@@ -1536,7 +1554,7 @@ export function Forecast() {
               </Badge>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3.5">
               {[
                 { label: 'Total volume', value: f.volume.toLocaleString() + ' kg' },
                 { label: 'Chilled vol.', value: f.chilledVol.toLocaleString() + ' kg' },
@@ -1600,7 +1618,7 @@ export function Forecast() {
       </Card>
 
       {/* Intelligence insights */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <AlertCard
           type="warning"
           title="Deepavali peak — action required"
