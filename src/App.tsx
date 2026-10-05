@@ -1,6 +1,7 @@
 import { AppProvider, useApp, ROLE_PREFIX } from './context/AppContext';
 import { AuthProvider } from './context/AuthContext';
 import Shell from './components/Shell';
+import { CheckCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 // Auth
 import { Login, ForgotPassword, ResetPassword, ResetSuccess, RoleSelect } from './components/auth/AuthScreens';
@@ -182,7 +183,33 @@ function AppContent() {
       {showProfile && <ProfileOverlay />}
       {showNotifications && <NotificationsOverlay />}
       {showSearch && <GlobalSearchOverlay />}
+      <ToastContainer />
     </>
+  );
+}
+
+function ToastContainer() {
+  const { toasts, removeToast } = useApp();
+  if (!toasts || toasts.length === 0) return null;
+  
+  return (
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+      {toasts.map(t => (
+        <div key={t.id} className={`flex items-center gap-3 p-3 rounded-lg shadow-lg border text-white ${
+          t.type === 'success' ? 'bg-green-900/90 border-green-700' :
+          t.type === 'error' ? 'bg-red-900/90 border-red-700' :
+          'bg-gray-800/90 border-gray-600'
+        }`}>
+          {t.type === 'success' && <CheckCircle size={18} className="text-green-400" />}
+          {t.type === 'error' && <AlertTriangle size={18} className="text-red-400" />}
+          {t.type === 'info' && <Info size={18} className="text-blue-400" />}
+          <span className="text-sm font-medium">{t.message}</span>
+          <button onClick={() => removeToast(t.id)} className="ml-4 opacity-70 hover:opacity-100 bg-transparent border-none cursor-pointer text-white">
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 

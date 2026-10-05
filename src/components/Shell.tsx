@@ -217,17 +217,13 @@ export default function Shell({ children, title, subtitle, mobileFrame }: ShellP
       <LogisticsBackground variant={getBgVariant(screen, role)} />
 
       {/* ── Sidebar ── */}
-      <aside style={{
-        width: sidebarW, flexShrink: 0,
+      <aside className="hidden md:flex flex-col shrink-0 relative z-40 overflow-hidden" style={{
+        width: sidebarW,
         background: 'rgba(5, 8, 14, 0.85)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
         borderRight: '1px solid rgba(255,255,255,0.06)',
-        display: 'flex', flexDirection: 'column',
         transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-        overflow: 'hidden',
-        zIndex: 40,
-        position: 'relative',
       }}>
         {/* Sidebar glow */}
         <div style={{
@@ -466,12 +462,13 @@ export default function Shell({ children, title, subtitle, mobileFrame }: ShellP
           {/* Left: Collapse + Title */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <button
+              className="hidden md:flex items-center"
               onClick={() => setCollapsed(c => !c)}
               style={{
                 background: 'transparent', border: '1px solid transparent',
                 cursor: 'pointer', color: C.text3,
                 padding: 7, borderRadius: 9,
-                transition: 'all 0.18s', display: 'flex', alignItems: 'center',
+                transition: 'all 0.18s',
               }}
               onMouseEnter={e => {
                 (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)';
@@ -500,6 +497,7 @@ export default function Shell({ children, title, subtitle, mobileFrame }: ShellP
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {/* Search */}
             <button
+              className="hidden md:flex items-center"
               onClick={() => setShowSearch(true)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10,
@@ -622,6 +620,31 @@ export default function Shell({ children, title, subtitle, mobileFrame }: ShellP
             </motion.div>
           </AnimatePresence>
         </main>
+
+        {/* Mobile Bottom Navigation */}
+        <div className="md:hidden flex items-center justify-around shrink-0 z-40 relative pb-safe" style={{ background: 'rgba(3, 5, 8, 0.95)', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10, paddingBottom: 10 }}>
+          {navItems.map(item => {
+            const isActive = screen === item.screen;
+            const accent = item.accentColor || C.accent;
+            return (
+              <button
+                key={item.label}
+                onClick={() => navigate(item.screen)}
+                className="flex flex-col items-center gap-1 relative bg-transparent border-none px-2 cursor-pointer transition-colors"
+                style={{ color: isActive ? accent : C.text3 }}
+              >
+                {item.icon}
+                <span style={{ fontSize: 10, fontWeight: isActive ? 600 : 500 }}>{item.label}</span>
+                {item.badge && (
+                  <span style={{
+                    position: 'absolute', top: 0, right: 0, width: 6, height: 6,
+                    background: C.danger, borderRadius: '50%', boxShadow: `0 0 8px ${C.danger}60`
+                  }} />
+                )}
+              </button>
+            )
+          })}
+        </div>
       </div>
     </div>
   );

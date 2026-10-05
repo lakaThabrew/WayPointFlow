@@ -3,7 +3,7 @@
 **Branch:** `lakmana-phase-06`
 **Target Day:** October 3, 2026
 **Depends on:** Phase 5 (loading workflow) ✅
-**Status:** ⚪ Not Started
+**Status:** 🟢 Implemented (2026-10-04 audit) — route/arrive/complete/issue endpoints live and DRIVER-guarded; route scoped to the driver's depot; stop status guards stop re-delivery or arrival on an ISSUE stop; trips transition to COMPLETED when every stop resolves; receiver name is required for PoD; missing driver-trip wiring and error/empty states fixed; api + web build clean (0 TS errors)
 
 ---
 

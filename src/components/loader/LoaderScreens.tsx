@@ -3,39 +3,68 @@ import { getLoadingQueue, getTripManifest, submitLoadingEvent, markTripReady, ty
 import dayjs from 'dayjs';
 import {
   CheckCircle, AlertTriangle, Clock, Package, Truck, ChevronRight,
-  ArrowLeft, Phone, Activity, Zap,
+  ArrowLeft, Phone,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import {
   C, Card, Badge, StatusBadge, BrandBadge, TempBadge, Btn,
-  KpiCard, CapacityBar, AlertCard, Table, TableRow, SectionHeader,
-  InfoRow, Divider, ConstraintTag, Mono, Label,
-  AnimatedNumber, AiBadge, Sparkline,
+  CapacityBar, AlertCard, Table, TableRow, SectionHeader,
+  InfoRow, Divider, Mono,
+  AnimatedNumber, Spinner, EmptyState,
 } from '../ui';
-import { ORDERS, VEHICLES, TRIPS, TODAY_DISPLAY } from '../../data/mockData';
+import { TODAY_DISPLAY } from '../../data/mockData';
 
 // ─── L01 — Loader Home ─────────────────────────────────────────────────────
 export function LoaderHome() {
-  const { navigate } = useApp();
+  const { navigate, setSelectedTripId } = useApp();
+  const [runs, setRuns] = useState<LoadingQueueItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    getLoadingQueue()
+      .then((data) => {
+        setRuns(data);
+        setError('');
+      })
+      .catch((e) => {
+        console.error(e);
+        setError(e instanceof Error ? e.message : 'Could not load the dock activity');
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const openRun = (r: LoadingQueueItem) => {
+    setSelectedTripId(r.id);
+    navigate('loader/run-details');
+  };
+
+  const waiting = runs.filter((r) => r.status === 'RELEASED').length;
+  const loadingRuns = runs.filter((r) => r.status === 'LOADING').length;
+  const ready = runs.filter((r) => r.status === 'READY').length;
 
   const statusCounts = [
-    { label: 'Waiting', count: 3, color: C.text3, action: () => navigate('loader/queue') },
-    { label: 'Loading', count: 2, color: C.warning, action: () => navigate('loader/queue') },
-    { label: 'Ready', count: 1, color: C.success, action: () => navigate('loader/ready') },
-    { label: 'Shortfall', count: 1, color: C.danger, action: () => navigate('loader/shortfall') },
-    { label: 'Departed', count: 3, color: C.text2, action: () => {} },
+    { label: 'Awaiting load', count: waiting, color: C.text3, action: () => navigate('loader/queue') },
+    { label: 'Loading', count: loadingRuns, color: C.warning, action: () => navigate('loader/queue') },
+    { label: 'Ready', count: ready, color: C.success, action: () => navigate('loader/ready') },
+    { label: 'Runs today', count: runs.length, color: C.accent, action: () => navigate('loader/queue') },
+    { label: 'Stops queued', count: runs.reduce((sum, r) => sum + r.stopCount, 0), color: C.text2, action: () => navigate('loader/queue') },
   ];
 
+  if (loading) {
+    return <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full flex justify-center py-20"><Spinner size={32} /></div>;
+  }
+
   return (
-    <div style={{ padding: 28, maxWidth: 1100 }}>
+    <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full">
       {/* Hero Header */}
-      <div style={{
-        marginBottom: 24, padding: '20px 24px',
-        background: 'linear-gradient(135deg, rgba(251,191,36,0.08) 0%, rgba(12,18,32,0.6) 60%)',
-        borderRadius: 16, border: '1px solid rgba(251,191,36,0.15)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        position: 'relative', overflow: 'hidden',
-      }}>
+      <div
+        className="mb-6 p-5 md:p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center relative overflow-hidden gap-4"
+        style={{
+          background: 'linear-gradient(135deg, rgba(251,191,36,0.08) 0%, rgba(12,18,32,0.6) 60%)',
+          border: '1px solid rgba(251,191,36,0.15)',
+        }}
+      >
         <div style={{ position: 'absolute', top: -40, right: -40, width: 200, height: 200, background: 'radial-gradient(circle, rgba(251,191,36,0.10) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div>
           <h2 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 800, color: C.text, letterSpacing: '-0.025em' }}>Today's Loading</h2>
@@ -43,17 +72,22 @@ export function LoaderHome() {
         </div>
         <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
           <div style={{ textAlign: 'center' }}>
-            <p style={{ margin: 0, fontSize: 10, color: C.text3, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Loads Today</p>
+            <p style={{ margin: 0, fontSize: 10, color: C.text3, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Runs Today</p>
             <p style={{ margin: '4px 0 0', fontSize: 28, fontWeight: 800, color: C.warning, fontFamily: 'JetBrains Mono, monospace' }}>
-              <AnimatedNumber value={10} />
+              <AnimatedNumber value={runs.length} />
             </p>
           </div>
-          <Sparkline data={[6, 8, 7, 9, 8, 10, 10]} color={C.warning} height={36} width={70} />
         </div>
       </div>
 
+      {error && (
+        <div className="mb-5">
+          <AlertCard type="critical" title="Could not load the dock activity" desc={error} />
+        </div>
+      )}
+
       {/* Status cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 24 }} className="stagger-children">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6 stagger-children">
         {statusCounts.map(s => (
           <div
             key={s.label}
@@ -80,54 +114,52 @@ export function LoaderHome() {
         ))}
       </div>
 
-      {/* Shortfall alert */}
-      <AlertCard
-        type="critical"
-        title="Loading shortfall detected — ORD-10489"
-        desc="VEH014 Trip 2 — OUT078. Expected 240 kg, loaded 160 kg. Shortfall of 80 kg. Departure on hold."
-        action={<Btn variant="danger" size="sm" onClick={() => navigate('loader/shortfall')}>Resolve shortfall</Btn>}
-        time="03:48 AM"
-      />
-
       {/* Active dock */}
       <div style={{ marginTop: 20 }}>
-        <SectionHeader title="Current Dock Activity" subtitle="Active loading runs" action={
+        <SectionHeader title="Dock Activity" subtitle="Runs released to the loader queue" action={
           <Btn variant="primary" size="sm" onClick={() => navigate('loader/queue')}>Open loading queue</Btn>
         } />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-          {TRIPS.map(t => {
-            const vehicle = VEHICLES.find(v => v.id === t.vehicle)!;
-            const runStatus = t.status === 'On Route' ? 'Departed' : t.status === 'Loading' ? 'Loading' : 'Waiting';
-            const statusColor = runStatus === 'Departed' ? C.success : runStatus === 'Loading' ? C.warning : C.text3;
-
-            return (
-              <Card
-                key={`${t.vehicle}-${t.trip}`}
-                hover
-                onClick={() => navigate('loader/run-details')}
-                style={{ padding: 16 }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <div>
-                    <Mono color={C.text}>{t.vehicle}</Mono>
-                    <span style={{ marginLeft: 8, fontSize: 11, color: C.text3 }}>Trip {t.trip}</span>
+        {runs.length === 0 && !error ? (
+          <Card style={{ padding: 0 }}>
+            <EmptyState
+              icon={Truck}
+              title="No runs at the dock"
+              desc="Released trips land here automatically — ask the dispatcher to release a plan."
+            />
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {runs.map(r => {
+              const statusColor = r.status === 'READY' ? C.success : r.status === 'LOADING' ? C.warning : C.text3;
+              return (
+                <Card
+                  key={r.id}
+                  hover
+                  onClick={() => openRun(r)}
+                  style={{ padding: 16 }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div>
+                      <Mono color={C.text}>{r.vehicle?.registrationNo || 'UNASSIGNED'}</Mono>
+                      <span style={{ marginLeft: 8, fontSize: 11, color: C.text3 }}>Trip {r.tripNumber}</span>
+                    </div>
+                    <Badge color={statusColor} dot>{r.status}</Badge>
                   </div>
-                  <Badge color={statusColor} dot>{runStatus}</Badge>
-                </div>
-                <p style={{ margin: '0 0 4px', fontSize: 12, color: C.text, fontWeight: 500 }}>{t.district}</p>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                  <BrandBadge brand={t.brand} />
-                  {t.reefer && <Badge color={C.reefer}>❄</Badge>}
-                </div>
-                <CapacityBar label="Weight" used={t.weightKg} max={vehicle.maxWeightKg} unit="kg" />
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-                  <span style={{ fontSize: 11, color: C.text3 }}>Departs</span>
-                  <Mono color={C.warning}>{t.departure}</Mono>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+                  <p style={{ margin: '0 0 4px', fontSize: 12, color: C.text, fontWeight: 500 }}>{r.district}</p>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                    <BrandBadge brand={r.brand as any} />
+                    {r.vehicle?.temperatureType === 'REEFER' && <Badge color={C.reefer}>❄</Badge>}
+                  </div>
+                  <CapacityBar label="Stops" used={r.stopCount} max={Math.max(r.stopCount, 1)} unit="stops" />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+                    <span style={{ fontSize: 11, color: C.text3 }}>Departs</span>
+                    <Mono color={C.warning}>{r.plannedDeparture ? dayjs(r.plannedDeparture).format('HH:mm') : '--:--'}</Mono>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -138,6 +170,7 @@ export function LoadingQueue() {
   const { navigate, setSelectedTripId } = useApp();
   const [runs, setRuns] = useState<LoadingQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     getLoadingQueue().then(data => {
@@ -145,6 +178,7 @@ export function LoadingQueue() {
       setLoading(false);
     }).catch(err => {
       console.error(err);
+      setError(err instanceof Error ? err.message : 'Could not load the loading queue');
       setLoading(false);
     });
   }, []);
@@ -153,7 +187,6 @@ export function LoadingQueue() {
     if (s === 'LOADING') return C.warning;
     if (s === 'READY') return C.success;
     if (s === 'RELEASED') return C.text3;
-    if (s === 'Shortfall') return C.danger;
     return C.text3;
   };
 
@@ -163,11 +196,19 @@ export function LoadingQueue() {
   };
 
   if (loading) {
-    return <div style={{ padding: 28, color: C.text2 }}>Loading queue...</div>;
+    return <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full flex justify-center py-20"><Spinner size={32} /></div>;
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full">
+        <AlertCard type="critical" title="Could not load the loading queue" desc={error} />
+      </div>
+    );
   }
 
   return (
-    <div style={{ padding: 28 }}>
+    <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full">
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Loading Queue</h2>
@@ -176,32 +217,33 @@ export function LoadingQueue() {
       </div>
 
       <Card style={{ padding: 0 }}>
-        <Table headers={['Vehicle', 'Trip', 'Brand', 'District', 'Departure', 'Orders', 'Total Qty', 'Status', '']}>
-          {runs.map(r => {
-            return (
-              <TableRow
-                key={r.id}
-                onClick={() => handleOpenRun(r)}
-                cells={[
-                  <div>
-                    <Mono color={C.text}>{r.vehicle?.registrationNo || 'UNASSIGNED'}</Mono>
-                    {r.vehicle?.temperatureType === 'REEFER' && <span style={{ marginLeft: 6, fontSize: 10, color: C.reefer }}>❄</span>}
-                  </div>,
-                  <span style={{ fontSize: 12, color: C.text2 }}>Trip {r.tripNumber}</span>,
-                  <BrandBadge brand={r.brand as any} />,
-                  <span style={{ fontSize: 12, color: C.text }}>{r.district}</span>,
-                  <Mono color={C.warning}>{r.plannedDeparture ? dayjs(r.plannedDeparture).format('HH:mm') : '--:--'}</Mono>,
-                  <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{r.stopCount}</span>,
-                  <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{r.totalQuantity}</span>,
-                  <Badge color={statusColor(r.status)} dot>{r.status}</Badge>,
-                  <Btn variant="secondary" size="sm">Open run</Btn>,
-                ]}
-              />
-            );
-          })}
-        </Table>
-        {runs.length === 0 && (
-           <div style={{ padding: '30px', textAlign: 'center', color: C.text3 }}>No trips ready for loading.</div>
+        {runs.length === 0 ? (
+          <EmptyState icon={Truck} title="No trips awaiting loading" desc="Released trips appear here once the dispatcher hands them to the dock." />
+        ) : (
+          <Table headers={['Vehicle', 'Trip', 'Brand', 'District', 'Departure', 'Orders', 'Total Qty', 'Status', '']}>
+            {runs.map(r => {
+              return (
+                <TableRow
+                  key={r.id}
+                  onClick={() => handleOpenRun(r)}
+                  cells={[
+                    <div>
+                      <Mono color={C.text}>{r.vehicle?.registrationNo || 'UNASSIGNED'}</Mono>
+                      {r.vehicle?.temperatureType === 'REEFER' && <span style={{ marginLeft: 6, fontSize: 10, color: C.reefer }}>❄</span>}
+                    </div>,
+                    <span style={{ fontSize: 12, color: C.text2 }}>Trip {r.tripNumber}</span>,
+                    <BrandBadge brand={r.brand as any} />,
+                    <span style={{ fontSize: 12, color: C.text }}>{r.district}</span>,
+                    <Mono color={C.warning}>{r.plannedDeparture ? dayjs(r.plannedDeparture).format('HH:mm') : '--:--'}</Mono>,
+                    <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{r.stopCount}</span>,
+                    <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{r.totalQuantity}</span>,
+                    <Badge color={statusColor(r.status)} dot>{r.status}</Badge>,
+                    <Btn variant="secondary" size="sm">Open run</Btn>,
+                  ]}
+                />
+              );
+            })}
+          </Table>
         )}
       </Card>
     </div>
@@ -212,19 +254,49 @@ export function LoadingQueue() {
 export function RunDetails() {
   const { navigate, selectedTripId } = useApp();
   const [trip, setTrip] = useState<any>(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!selectedTripId) return;
-    getTripManifest(selectedTripId).then(setTrip).catch(console.error);
+    setTrip(null);
+    setError('');
+    getTripManifest(selectedTripId)
+      .then(setTrip)
+      .catch((e) => {
+        console.error(e);
+        setError(e instanceof Error ? e.message : 'Could not load the trip manifest');
+      });
   }, [selectedTripId]);
 
-  if (!trip) return <div style={{ padding: 28, color: C.text2 }}>Loading run details...</div>;
+  if (!selectedTripId) {
+    return (
+      <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
+        <AlertCard type="warning" title="No trip selected" desc="Open a run from the loading queue to see its manifest." />
+        <div style={{ marginTop: 16 }}>
+          <Btn variant="primary" onClick={() => navigate('loader/queue')}>Back to queue</Btn>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
+        <AlertCard type="critical" title="Could not load this run" desc={error} />
+        <div style={{ marginTop: 16 }}>
+          <Btn variant="primary" onClick={() => navigate('loader/queue')}>Back to queue</Btn>
+        </div>
+      </div>
+    );
+  }
+
+  if (!trip) return <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full flex justify-center py-20"><Spinner size={32} /></div>;
 
   const totalWeight = trip.stops.reduce((sum: number, s: any) => sum + s.order.weightKg, 0);
   const totalVolume = trip.stops.reduce((sum: number, s: any) => sum + s.order.volumeM3, 0);
 
   return (
-    <div style={{ padding: 28, maxWidth: 900 }}>
+    <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('loader/queue')}><ArrowLeft size={14} /> Queue</Btn>
         <ChevronRight size={14} color={C.text3} />
@@ -232,7 +304,7 @@ export function RunDetails() {
       </div>
 
       {/* Run header */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16, marginBottom: 20 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 mb-5">
         <Card>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
             <div>
@@ -293,17 +365,48 @@ export function RunDetails() {
 
 // ─── L04 — Loading Checklist ────────────────────────────────────────────────
 export function LoadingChecklist() {
-  const { navigate, selectedTripId } = useApp();
+  const { navigate, selectedTripId, showToast } = useApp();
   const [trip, setTrip] = useState<any>(null);
+  const [error, setError] = useState('');
   const [checked, setChecked] = useState<Record<string, Record<string, boolean>>>({});
+  const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [confirmShortfall, setConfirmShortfall] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!selectedTripId) return;
-    getTripManifest(selectedTripId).then(setTrip).catch(console.error);
+    setTrip(null);
+    setError('');
+    getTripManifest(selectedTripId).then(setTrip).catch((e) => {
+      console.error(e);
+      setError(e instanceof Error ? e.message : 'Could not load the trip manifest');
+    });
   }, [selectedTripId]);
 
-  if (!trip) return <div style={{ padding: 28, color: C.text2 }}>Loading checklist...</div>;
+  if (!selectedTripId) {
+    return (
+      <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
+        <AlertCard type="warning" title="No trip selected" desc="Open a run from the loading queue to start its checklist." />
+        <div style={{ marginTop: 16 }}>
+          <Btn variant="primary" onClick={() => navigate('loader/queue')}>Back to queue</Btn>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
+        <AlertCard type="critical" title="Could not load the checklist" desc={error} />
+        <div style={{ marginTop: 16, display: 'flex', gap: 10 }}>
+          <Btn variant="primary" onClick={() => navigate('loader/queue')}>Back to queue</Btn>
+          <Btn variant="secondary" onClick={() => { setError(''); getTripManifest(selectedTripId).then(setTrip).catch((e) => setError(String(e))); }}>Retry</Btn>
+        </div>
+      </div>
+    );
+  }
+
+  if (!trip) return <div className="flex justify-center py-20"><Spinner size={28} /></div>;
 
   const orders = trip.stops.map((s: any) => ({
     id: s.order.id,
@@ -323,14 +426,29 @@ export function LoadingChecklist() {
     }));
   };
 
+  // Actual quantity loaded — defaults to the planned quantity until the loader overrides it.
+  const loadedFor = (order: { id: string; packages: number }) => {
+    const raw = quantities[order.id];
+    if (raw === undefined || raw === '') return order.packages;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  };
+
+  const setLoaded = (orderId: string, value: number, max: number) => {
+    const clamped = Math.max(0, Math.min(max, value));
+    setQuantities(q => ({ ...q, [orderId]: String(clamped) }));
+  };
+
+  const shortfallOrders = orders.filter((o: any) => loadedFor(o) < o.packages);
+
   const totalLoaded = orders.reduce((acc: number, o: any) =>
-    (checked[o.id]?.Loaded ? o.weight : 0) + acc, 0
+    (checked[o.id]?.Loaded ? loadedFor(o) : 0) + acc, 0
   );
   const totalWeight = orders.reduce((acc: number, o: any) => acc + o.weight, 0);
   const allComplete = orders.every((o: any) => steps.every(s => checked[o.id]?.[s]));
   const totalPackages = orders.reduce((acc: number, o: any) => acc + o.packages, 0);
 
-  const handleMarkComplete = async () => {
+  const submitEvents = async () => {
     if (submitting) return;
     setSubmitting(true);
     try {
@@ -338,37 +456,55 @@ export function LoadingChecklist() {
         await submitLoadingEvent({
           tripId: trip.id,
           orderId: order.id,
-          loadedQty: order.packages, // Assuming full quantity loaded
-          expectedQty: order.packages
+          loadedQty: loadedFor(order),
+          expectedQty: order.packages,
         });
       }
+      showToast(
+        shortfallOrders.length > 0
+          ? `Loading recorded with ${shortfallOrders.length} shortfall${shortfallOrders.length === 1 ? '' : 's'}`
+          : 'Loading verified for every order',
+        shortfallOrders.length > 0 ? 'info' : 'success',
+      );
       navigate('loader/ready');
     } catch (e) {
       console.error(e);
+      showToast(e instanceof Error ? e.message : 'Failed to record loading', 'error');
     } finally {
       setSubmitting(false);
+      setConfirmShortfall(false);
     }
   };
 
+  const handleMarkComplete = () => {
+    if (shortfallOrders.length > 0) {
+      setConfirmShortfall(true);
+      return;
+    }
+    void submitEvents();
+  };
+
   return (
-    <div style={{ padding: 28, maxWidth: 900 }}>
+    <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('loader/run-details')}><ArrowLeft size={14} /> Run Details</Btn>
         <ChevronRight size={14} color={C.text3} />
         <span style={{ fontSize: 13, color: C.text }}>Loading Checklist — {trip.vehicle?.registrationNo} Trip {trip.tripNumber}</span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 lg:gap-5">
         <div>
           {orders.map((order: any) => {
             const orderChecked = checked[order.id] || {};
             const allStepsDone = steps.every(s => orderChecked[s]);
+            const loaded = loadedFor(order);
+            const isShort = loaded < order.packages;
             return (
               <Card
                 key={order.id}
                 style={{
                   marginBottom: 14, padding: 18,
-                  borderLeft: `3px solid ${allStepsDone ? C.success : C.border}`,
+                  borderLeft: `3px solid ${isShort ? C.danger : allStepsDone ? C.success : C.border}`,
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -379,9 +515,54 @@ export function LoadingChecklist() {
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                     {order.chilled && <Badge color={C.reefer}>❄ Chilled</Badge>}
-                    {allStepsDone && <Badge color={C.success} dot>Complete</Badge>}
+                    {isShort && <Badge color={C.danger} dot>Shortfall</Badge>}
+                    {allStepsDone && !isShort && <Badge color={C.success} dot>Complete</Badge>}
                   </div>
                 </div>
+
+                {/* Loaded quantity stepper */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                  <span style={{ fontSize: 12, color: C.text2, minWidth: 108 }}>Loaded qty</span>
+                  <button
+                    onClick={() => setLoaded(order.id, loaded - 1, order.packages)}
+                    aria-label={`Decrease loaded quantity for ${order.id}`}
+                    style={{
+                      width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                      background: C.elevated, border: `1px solid ${C.border}`, cursor: 'pointer',
+                      color: C.text2, fontSize: 16, lineHeight: 1,
+                    }}
+                  >−</button>
+                  <input
+                    type="number"
+                    min={0}
+                    max={order.packages}
+                    value={quantities[order.id] ?? String(order.packages)}
+                    onChange={(e) => setQuantities(q => ({ ...q, [order.id]: e.target.value }))}
+                    style={{
+                      width: 72, padding: '7px 8px', textAlign: 'center',
+                      borderRadius: 8, fontSize: 13,
+                      border: `1px solid ${isShort ? C.danger + '60' : C.border}`,
+                      background: isShort ? C.dangerDim : C.elevated,
+                      color: isShort ? C.danger : C.text,
+                    }}
+                  />
+                  <button
+                    onClick={() => setLoaded(order.id, loaded + 1, order.packages)}
+                    aria-label={`Increase loaded quantity for ${order.id}`}
+                    style={{
+                      width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                      background: C.elevated, border: `1px solid ${C.border}`, cursor: 'pointer',
+                      color: C.text2, fontSize: 16, lineHeight: 1,
+                    }}
+                  >+</button>
+                  <span style={{ fontSize: 12, color: C.text3 }}>of {order.packages} planned</span>
+                  {isShort && (
+                    <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: C.danger }}>
+                      −{order.packages - loaded}
+                    </span>
+                  )}
+                </div>
+
                 <div style={{ display: 'flex', gap: 8 }}>
                   {steps.map(step => (
                     <button
@@ -413,10 +594,11 @@ export function LoadingChecklist() {
         <div>
           <Card style={{ marginBottom: 14 }}>
             <SectionHeader title="Load Summary" />
-            <CapacityBar label="Weight loaded" used={totalLoaded} max={totalWeight} unit="kg" />
+            <CapacityBar label="Packages loaded" used={totalLoaded} max={totalPackages} unit="pkgs" color={shortfallOrders.length > 0 ? C.danger : C.success} />
+            <CapacityBar label="Weight" used={totalWeight} max={trip.vehicle?.maxWeightKg || 0} unit="kg" />
             <InfoRow label="Total weight" value={`${totalWeight} kg`} mono />
             <InfoRow label="Vehicle max" value={`${trip.vehicle?.maxWeightKg || 0} kg`} mono />
-            <InfoRow label="Packages" value={`${totalPackages} total`} mono />
+            <InfoRow label="Packages" value={`${totalLoaded} / ${totalPackages}`} mono />
             <Divider />
             {trip.vehicle?.temperatureType === 'REEFER' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: C.reeferDim, borderRadius: 6, border: `1px solid ${C.reefer}20` }}>
@@ -430,27 +612,47 @@ export function LoadingChecklist() {
             <SectionHeader title="Checklist Status" />
             {orders.map((o: any) => {
               const done = steps.every(s => checked[o.id]?.[s]);
+              const isShort = loadedFor(o) < o.packages;
               return (
                 <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${C.border}` }}>
                   <Mono color={C.text3}>{o.id}</Mono>
-                  {done
-                    ? <CheckCircle size={14} color={C.success} />
-                    : <div style={{ width: 14, height: 14, borderRadius: '50%', border: `1px solid ${C.text3}` }} />}
+                  {isShort
+                    ? <AlertTriangle size={14} color={C.danger} />
+                    : done
+                      ? <CheckCircle size={14} color={C.success} />
+                      : <div style={{ width: 14, height: 14, borderRadius: '50%', border: `1px solid ${C.text3}` }} />}
                 </div>
               );
             })}
           </Card>
 
-          <div style={{ marginTop: 16 }}>
+          {confirmShortfall && (
+            <Card style={{ marginTop: 14, border: `1px solid ${C.danger}40` }}>
+              <SectionHeader title="Dispatch with shortfalls?" />
+              <p style={{ margin: '0 0 12px', fontSize: 12, color: C.text2 }}>
+                {shortfallOrders.length} order{shortfallOrders.length === 1 ? '' : 's'} loaded short:{' '}
+                {shortfallOrders.map((o: any) => o.id).join(', ')}. The trip will still be released to the driver.
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Btn variant="danger" size="sm" onClick={() => void submitEvents()} disabled={submitting}>Continue</Btn>
+                <Btn variant="ghost" size="sm" onClick={() => setConfirmShortfall(false)}>Go back</Btn>
+              </div>
+            </Card>
+          )}
+
+          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {allComplete ? (
-              <Btn variant="primary" fullWidth onClick={handleMarkComplete}>
+              <Btn variant="primary" fullWidth onClick={handleMarkComplete} disabled={submitting} loading={submitting}>
                 <CheckCircle size={14} /> Mark loading complete
               </Btn>
             ) : (
-              <Btn variant="danger" fullWidth onClick={() => navigate('loader/shortfall')}>
-                Report shortfall
+              <Btn variant="secondary" fullWidth onClick={() => navigate('loader/queue')}>
+                Finish the checklist first
               </Btn>
             )}
+            <Btn variant="danger" fullWidth onClick={() => navigate('loader/shortfall')}>
+              Report shortfall
+            </Btn>
           </div>
         </div>
       </div>
@@ -464,7 +666,7 @@ export function LoadingShortfall() {
   const [action, setAction] = useState<'none' | 'reported' | 'hold'>('none');
 
   return (
-    <div style={{ padding: 28, maxWidth: 700 }}>
+    <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('loader/checklist')}><ArrowLeft size={14} /> Checklist</Btn>
       </div>
@@ -495,7 +697,7 @@ export function LoadingShortfall() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
             <Card>
               <SectionHeader title="Affected Order" />
               <InfoRow label="Order ID" value={<Mono color={C.danger}>ORD-10489</Mono>} />
@@ -556,17 +758,47 @@ export function LoadingShortfall() {
 
 // ─── L06 — Ready for Departure ────────────────────────────────────────────
 export function ReadyForDeparture() {
-  const { navigate, selectedTripId } = useApp();
+  const { navigate, selectedTripId, showToast } = useApp();
   const [trip, setTrip] = useState<any>(null);
+  const [error, setError] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!selectedTripId) return;
-    getTripManifest(selectedTripId).then(setTrip).catch(console.error);
+    setTrip(null);
+    setError('');
+    getTripManifest(selectedTripId)
+      .then(setTrip)
+      .catch((e) => {
+        console.error(e);
+        setError(e instanceof Error ? e.message : 'Could not load the trip manifest');
+      });
   }, [selectedTripId]);
 
-  if (!trip) return <div style={{ padding: 28, color: C.text2 }}>Loading...</div>;
+  if (!selectedTripId) {
+    return (
+      <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full">
+        <AlertCard type="warning" title="No trip selected" desc="Open a run from the loading queue to confirm departure." />
+        <div style={{ marginTop: 16 }}>
+          <Btn variant="primary" onClick={() => navigate('loader/queue')}>Back to queue</Btn>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full">
+        <AlertCard type="critical" title="Could not load this run" desc={error} />
+        <div style={{ marginTop: 16 }}>
+          <Btn variant="primary" onClick={() => navigate('loader/queue')}>Back to queue</Btn>
+        </div>
+      </div>
+    );
+  }
+
+  if (!trip) return <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full" style={{ color: C.text2 }}>Loading...</div>;
 
   const handleConfirm = async () => {
     if (submitting) return;
@@ -574,28 +806,46 @@ export function ReadyForDeparture() {
     try {
       await markTripReady(trip.id);
       setConfirmed(true);
+      showToast('Trip marked as ready successfully!', 'success');
     } catch (e) {
       console.error(e);
+      showToast(e instanceof Error ? e.message : 'Failed to mark trip ready', 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
+  // Latest loading event per order — the manifest returns them newest first.
+  const latestByOrder = new Map<string, any>();
+  for (const e of trip.loadingEvents ?? []) {
+    if (!latestByOrder.has(e.orderId)) latestByOrder.set(e.orderId, e);
+  }
+
+  const orderIds = (trip.stops ?? []).map((s: any) => s.orderId);
+  const unchecked = orderIds.filter((id: string) => !latestByOrder.has(id));
+  const shortOrders = orderIds.filter((id: string) => latestByOrder.get(id)?.shortfallFlag);
+  const hasReeferRequirement = (trip.stops ?? []).some(
+    (s: any) => s.order.temperatureRequirement === 'CHILLED' || s.order.temperatureRequirement === 'FROZEN'
+  );
+  const reeferOk = !hasReeferRequirement || trip.vehicle?.temperatureType === 'REEFER';
+
+  const totalWeight = (trip.stops ?? []).reduce((sum: number, s: any) => sum + s.order.weightKg, 0);
+  const totalVolume = (trip.stops ?? []).reduce((sum: number, s: any) => sum + s.order.volumeM3, 0);
+
   const checks = [
-    { label: 'All orders verified', done: true },
-    { label: 'Temperature requirements checked', done: true },
-    { label: 'Weight within vehicle capacity', done: true },
-    { label: 'Volume within vehicle capacity', done: true },
-    { label: 'Loading complete — all items stowed', done: true },
-    { label: 'Route plan released by dispatcher', done: true },
-    { label: 'No active shortfall flags', done: true },
+    { label: `All orders verified (${orderIds.length - unchecked.length}/${orderIds.length})`, done: unchecked.length === 0 },
+    { label: 'Temperature requirements checked', done: reeferOk },
+    { label: 'Weight within vehicle capacity', done: totalWeight <= (trip.vehicle?.maxWeightKg ?? 0) },
+    { label: 'Volume within vehicle capacity', done: totalVolume <= (trip.vehicle?.maxVolumeM3 ?? 0) },
+    { label: 'Route plan released by dispatcher', done: trip.status === 'RELEASED' || trip.status === 'READY' },
+    { label: 'No active shortfall flags', done: shortOrders.length === 0 },
   ];
 
   const allOk = checks.every(c => c.done);
 
   if (confirmed) {
     return (
-      <div style={{ padding: 28, maxWidth: 600, textAlign: 'center' }}>
+      <div className="p-4 md:p-7 max-w-[600px] mx-auto w-full" style={{ textAlign: 'center' }}>
         <Card style={{ padding: '40px 32px', border: `1px solid ${C.success}30` }}>
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.successDim, border: `1px solid ${C.success}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <CheckCircle size={26} color={C.success} />
@@ -609,7 +859,7 @@ export function ReadyForDeparture() {
   }
 
   return (
-    <div style={{ padding: 28, maxWidth: 700 }}>
+    <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('loader/checklist')}><ArrowLeft size={14} /> Checklist</Btn>
       </div>

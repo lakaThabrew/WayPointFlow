@@ -9,7 +9,7 @@ import {
   C, Card, Badge, StatusBadge, BrandBadge, TempBadge, Btn,
   KpiCard, CapacityBar, AlertCard, Table, TableRow, SectionHeader,
   InfoRow, Timeline, Label, Divider, ConstraintTag, Mono,
-  AnimatedNumber, AiBadge, TrendIndicator, Sparkline,
+  AnimatedNumber, AiBadge, TrendIndicator, Sparkline, Spinner, EmptyState,
 } from '../ui';
 import {
   ORDERS, VEHICLES, TRIPS, ALERTS, STATS, TODAY_DISPLAY,
@@ -28,6 +28,21 @@ function hhmm(iso: string | null | undefined): string {
 // ─── D01 — Dispatcher Overview ───────────────────────────────────────────────
 export function DispatcherOverview() {
   const { navigate } = useApp();
+  const [liveAlerts, setLiveAlerts] = useState<any[]>([]);
+  const [alertsError, setAlertsError] = useState('');
+
+  useEffect(() => {
+    const load = () => {
+      planningApi.alerts()
+        .then(r => { setLiveAlerts(r.alerts); setAlertsError(''); })
+        // Without this the panel would render "No active alerts" on a failed
+        // fetch — a false all-clear on the dispatcher's safety-critical panel.
+        .catch((e) => setAlertsError(e instanceof Error ? e.message : 'Could not load alerts'));
+    };
+    load();
+    const timer = setInterval(load, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   const vehicleStatusGroups = [
     { label: 'Available', count: 4, color: C.success },
@@ -38,15 +53,15 @@ export function DispatcherOverview() {
   ];
 
   return (
-    <div style={{ padding: 28, maxWidth: 1400 }}>
+    <div className="p-4 md:p-7 max-w-[1400px] mx-auto w-full">
       {/* Hero Header */}
-      <div style={{
-        marginBottom: 24, padding: '20px 24px',
-        background: 'linear-gradient(135deg, rgba(14,165,233,0.08) 0%, rgba(12,18,32,0.6) 60%)',
-        borderRadius: 16, border: '1px solid rgba(14,165,233,0.15)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-        position: 'relative', overflow: 'hidden',
-      }}>
+      <div
+        className="mb-6 p-5 md:p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start relative overflow-hidden gap-4"
+        style={{
+          background: 'linear-gradient(135deg, rgba(14,165,233,0.08) 0%, rgba(12,18,32,0.6) 60%)',
+          border: '1px solid rgba(14,165,233,0.15)',
+        }}
+      >
         <div style={{
           position: 'absolute', top: -40, right: -40, width: 200, height: 200,
           background: 'radial-gradient(circle, rgba(14,165,233,0.12) 0%, transparent 70%)',
@@ -71,14 +86,14 @@ export function DispatcherOverview() {
       </div>
 
       {/* KPI Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }} className="stagger-children">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6 stagger-children">
         <KpiCard label="Orders Received" value={STATS.ordersReceived} sub="today" accent={C.text2} icon={<Package size={20} />} sparkData={[28,30,27,32,29,31,STATS.ordersReceived]} trend="+3.2%" trendUp />
         <KpiCard label="Orders Planned" value={STATS.ordersPlanned} sub={`${STATS.ordersConfirmed} confirmed`} accent={C.accent} icon={<CheckCircle size={20} />} sparkData={[20,22,21,24,23,25,STATS.ordersPlanned]} trend="+8.1%" trendUp />
         <KpiCard label="At-Risk Deliveries" value={STATS.atRiskDeliveries} sub="need attention" accent={C.danger} icon={<AlertTriangle size={20} />} alert={STATS.atRiskDeliveries > 0} sparkData={[1,2,1,0,2,1,STATS.atRiskDeliveries]} trend="-50%" trendUp />
         <KpiCard label="Deferred" value={STATS.ordersDeferred} sub="need rescheduling" accent={C.warning} icon={<XCircle size={20} />} sparkData={[2,1,3,2,1,2,STATS.ordersDeferred]} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5">
         {/* Main content */}
         <div>
           {/* Operations Timeline */}
@@ -122,7 +137,7 @@ export function DispatcherOverview() {
             <SectionHeader title="Fleet Status" subtitle="60 vehicles · Peliyagoda + Kandy" action={
               <Btn variant="text" size="sm" onClick={() => navigate('dispatcher/live-ops')}>View live map <ChevronRight size={12} /></Btn>
             } />
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 16 }}>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-4">
               {vehicleStatusGroups.map(g => (
                 <div key={g.label} style={{
                   padding: '12px 14px', background: C.elevated,
@@ -136,7 +151,7 @@ export function DispatcherOverview() {
             </div>
 
             {/* Vehicle cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {VEHICLES.slice(0, 3).map(v => (
                 <div
                   key={v.id}
@@ -196,20 +211,37 @@ export function DispatcherOverview() {
         {/* Alerts panel */}
         <div>
           <Card style={{ padding: 20, marginBottom: 16 }}>
-            <SectionHeader title="Active Alerts" subtitle={`${ALERTS.filter(a => !a.read).length} unread`} />
+            <SectionHeader title="Active Alerts" subtitle={alertsError ? 'unavailable' : `${liveAlerts.length} unread`} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {ALERTS.filter(a => !a.read).map(alert => (
-                <AlertCard
-                  key={alert.id}
-                  title={alert.title}
-                  desc={alert.description}
-                  type={alert.type}
-                  time={alert.time}
-                  action={alert.screen ? (
-                    <Btn variant="text" size="sm" onClick={() => navigate(alert.screen!)}>View <ChevronRight size={11} /></Btn>
-                  ) : undefined}
-                />
-              ))}
+              {alertsError ? (
+                <AlertCard type="critical" title="Could not load alerts" desc={alertsError} />
+              ) : (
+                <>
+                  {liveAlerts.map(alert => (
+                    <AlertCard
+                      key={alert.id}
+                      title={`Driver Issue: ${alert.outlet.name}`}
+                      desc={`Issue reported for order ${alert.orderId}`}
+                      type="critical"
+                      time={hhmm(alert.arrivedAt)}
+                      action={
+                        <Btn variant="text" size="sm" onClick={async () => {
+                          try {
+                            await planningApi.markAlertRead(alert.id);
+                            setLiveAlerts(prev => prev.filter(a => a.id !== alert.id));
+                          } catch (e) {
+                            console.error(e);
+                            setAlertsError(e instanceof Error ? e.message : 'Could not dismiss the alert');
+                          }
+                        }}>Mark read <CheckCircle size={11} /></Btn>
+                      }
+                    />
+                  ))}
+                  {liveAlerts.length === 0 && (
+                    <EmptyState icon={CheckCircle} title="No active alerts" desc="Everything is running smoothly." />
+                  )}
+                </>
+              )}
             </div>
           </Card>
 
@@ -270,7 +302,7 @@ export function DispatcherOrders() {
   );
 
   return (
-    <div style={{ padding: 28 }}>
+    <div className="p-4 md:p-7 max-w-[1400px] mx-auto w-full">
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Orders</h2>
@@ -322,7 +354,7 @@ export function DispatcherOrders() {
         </div>
       </Card>
 
-      {loading && <Card style={{ padding: 20 }}><p style={{ margin: 0, fontSize: 13, color: C.text3 }}>Loading orders…</p></Card>}
+      {loading && <Card style={{ padding: 40, textAlign: 'center' }}><Spinner size={28} /><p style={{ margin: '12px 0 0', fontSize: 13, color: C.text3 }}>Loading orders…</p></Card>}
       {!loading && error && <AlertCard type="critical" title="Could not load orders" desc={error} />}
       {!loading && !error && (
       <Card style={{ padding: 0 }}>
@@ -351,7 +383,7 @@ export function DispatcherOrders() {
           ))}
         </Table>
         {filtered.length === 0 && (
-          <div style={{ padding: '32px 0', textAlign: 'center', color: C.text3, fontSize: 13 }}>No orders match the selected filters.</div>
+          <EmptyState icon={Package} title="No orders match" desc="No orders match the selected filters." />
         )}
       </Card>
       )}
@@ -365,7 +397,7 @@ export function OrderDetails() {
   const order = ORDERS.find(o => o.id === selectedOrderId) || ORDERS[0];
 
   return (
-    <div style={{ padding: 28, maxWidth: 1100 }}>
+    <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('dispatcher/orders')}>
           <ArrowLeft size={14} /> Orders
@@ -375,7 +407,7 @@ export function OrderDetails() {
         <StatusBadge status={order.status} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5">
         {/* Left */}
         <div>
           <Card style={{ marginBottom: 16 }}>
@@ -515,7 +547,7 @@ export function PlanningWorkspace() {
   });
 
   return (
-    <div style={{ padding: 28 }}>
+    <div className="p-4 md:p-7">
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
@@ -534,7 +566,7 @@ export function PlanningWorkspace() {
       {error && <div style={{ marginBottom: 16 }}><AlertCard type="critical" title="Planning error" desc={error} /></div>}
 
       {/* Summary row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 20 }}>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mb-5">
         {[
           { label: 'Queued orders', value: unplanned.length, color: C.info },
           { label: 'Planned trips', value: trips.length, color: C.accent },
@@ -549,7 +581,7 @@ export function PlanningWorkspace() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr 300px', gap: 16, minHeight: 600 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr_300px] gap-4" style={{ minHeight: 600 }}>
         {/* Order Queue */}
         <div>
           <div style={{ marginBottom: 10 }}>
@@ -644,7 +676,7 @@ export function PlanningWorkspace() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                     <div>
                       <CapacityBar label="Weight" used={weightKg} max={vehicle.maxWeightKg} unit="kg" />
                       <CapacityBar label="Volume" used={volumeM3} max={vehicle.maxVolumeM3} unit="m³" />
@@ -767,12 +799,12 @@ export function ConstraintConflict() {
   const conflict = conflicts.find((c) => c.order.id === selectedOrderId) ?? conflicts[0] ?? null;
 
   if (loading) {
-    return <div style={{ padding: 28 }}><Card style={{ padding: 20 }}><p style={{ margin: 0, fontSize: 13, color: C.text3 }}>Loading conflicts…</p></Card></div>;
+    return <div className="p-4 md:p-7"><Card style={{ padding: 20 }}><p style={{ margin: 0, fontSize: 13, color: C.text3 }}>Loading conflicts…</p></Card></div>;
   }
 
   if (error || !conflict) {
     return (
-      <div style={{ padding: 28, maxWidth: 800 }}>
+      <div className="p-4 md:p-7 max-w-[800px] mx-auto w-full">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
           <Btn variant="ghost" size="sm" onClick={() => navigate('dispatcher/planning')}><ArrowLeft size={14} /> Back to Planning</Btn>
         </div>
@@ -789,7 +821,7 @@ export function ConstraintConflict() {
   const allFail = conflict.vehicleAssessment.every((v) => v.failedRule !== 'Feasible');
 
   return (
-    <div style={{ padding: 28, maxWidth: 800 }}>
+    <div className="p-4 md:p-7 max-w-[800px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('dispatcher/planning')}><ArrowLeft size={14} /> Back to Planning</Btn>
       </div>
@@ -813,7 +845,7 @@ export function ConstraintConflict() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
         {/* Order */}
         <Card>
           <SectionHeader title="Affected Order" />
@@ -933,7 +965,7 @@ export function DeferralDecision() {
 
   if (confirmed) {
     return (
-      <div style={{ padding: 28, maxWidth: 600 }}>
+      <div className="p-4 md:p-7 max-w-[600px] mx-auto w-full">
         <div style={{
           textAlign: 'center', padding: '40px 32px',
           background: C.card, border: `1px solid ${C.border}`, borderRadius: 14,
@@ -963,7 +995,7 @@ export function DeferralDecision() {
   }
 
   return (
-    <div style={{ padding: 28, maxWidth: 800 }}>
+    <div className="p-4 md:p-7 max-w-[800px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('dispatcher/constraint-conflict')}><ArrowLeft size={14} /> Back to conflict</Btn>
       </div>
@@ -973,7 +1005,7 @@ export function DeferralDecision() {
         <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>This decision will be recorded. The store manager will be notified of the deferral.</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
         {/* Order summary */}
         <Card>
           <SectionHeader title="Order Being Deferred" />
@@ -1003,7 +1035,7 @@ export function DeferralDecision() {
       {/* Reason */}
       <Card style={{ marginBottom: 20 }}>
         <SectionHeader title="Deferral Reason" subtitle="Required — select the primary reason" />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3.5">
           {reasons.map(r => (
             <button
               key={r}
@@ -1090,7 +1122,7 @@ export function DispatchPlan() {
 
   if (released) {
     return (
-      <div style={{ padding: 28, maxWidth: 600, textAlign: 'center' }}>
+      <div className="p-4 md:p-7 max-w-[600px] mx-auto w-full" style={{ textAlign: 'center' }}>
         <div style={{ padding: '40px 32px', background: C.card, border: `1px solid ${C.success}30`, borderRadius: 14 }}>
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.successDim, border: `1px solid ${C.success}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <CheckCircle size={26} color={C.success} />
@@ -1104,7 +1136,7 @@ export function DispatchPlan() {
   }
 
   return (
-    <div style={{ padding: 28, maxWidth: 1100 }}>
+    <div className="p-4 md:p-7 max-w-[1100px] mx-auto w-full">
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Plan Ready</h2>
         <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Peliyagoda · Review before releasing to loaders and drivers</p>
@@ -1113,7 +1145,7 @@ export function DispatchPlan() {
       {error && <div style={{ marginBottom: 16 }}><AlertCard type="critical" title="Plan error" desc={error} /></div>}
 
       {/* Summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 24 }}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-6">
         {[
           { label: 'Orders served', value: String(servedOrders), color: C.success },
           { label: 'Orders deferred', value: String(deferrals.length), color: deferrals.length ? C.danger : C.success },
@@ -1189,14 +1221,73 @@ export function DispatchPlan() {
 // ─── D08 — Live Operations ────────────────────────────────────────────────────
 export function LiveOperations() {
   const { navigate } = useApp();
-  const [selectedVehicle, setSelectedVehicle] = useState('VEH014');
-  const vehicle = VEHICLES.find(v => v.id === selectedVehicle)!;
-  const trip = TRIPS.find(t => t.vehicle === selectedVehicle);
+  const [trips, setTrips] = useState<any[]>([]);
+  const [selectedVehicle, setSelectedVehicle] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const load = (initial: boolean) => {
+      planningApi.liveOps()
+        .then(r => {
+          setTrips(r.trips);
+          setError('');
+          setSelectedVehicle(prev => {
+            if (r.trips.length === 0) return null;
+            if (prev && r.trips.some((t: any) => t.vehicle.registrationNo === prev)) return prev;
+            return r.trips[0].vehicle.registrationNo;
+          });
+        })
+        .catch((e) => {
+          console.error(e);
+          if (initial) setError(e instanceof Error ? e.message : 'Could not load live operations');
+        })
+        .finally(() => { if (initial) setLoading(false); });
+    };
+
+    load(true);
+    const timer = setInterval(() => load(false), 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const trip = trips.find(t => t.vehicle.registrationNo === selectedVehicle);
+  const vehicle = trip?.vehicle;
+  const currentStop = trip?.stops?.find((s: any) => s.status === 'PENDING' || s.status === 'ARRIVED');
+
+  if (loading) {
+    return <div className="flex items-center justify-center" style={{ height: '100%' }}><Spinner size={32} /></div>;
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
+        <AlertCard type="critical" title="Could not load live operations" desc={error} />
+        <Btn variant="primary" style={{ marginTop: 16 }} onClick={() => window.location.reload()}>
+          <RefreshCw size={14} /> Retry
+        </Btn>
+      </div>
+    );
+  }
+
+  if (trips.length === 0) {
+    return (
+      <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
+        <EmptyState
+          icon={Truck}
+          title="No trips in progress"
+          desc="Trips appear here once a loader marks them ready for departure."
+          action={<Btn variant="primary" onClick={() => navigate('dispatcher/planning')}>Open planning</Btn>}
+        />
+      </div>
+    );
+  }
 
   return (
-    <div style={{ display: 'flex', height: '100%' }}>
+    // Stacks on tablet/mobile: the map keeps a usable height and the vehicle
+    // panel drops underneath instead of squeezing the map into a sliver.
+    <div className="flex flex-col lg:flex-row" style={{ height: '100%', minHeight: 480 }}>
       {/* Map area */}
-      <div style={{ flex: 1, position: 'relative', background: C.elevated, overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 320, position: 'relative', background: C.elevated, overflow: 'hidden' }}>
         {/* Simulated map */}
         <div style={{ position: 'absolute', inset: 0 }} className="wp-grid-lines" />
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 30% 40%, rgba(56,189,248,0.05) 0%, transparent 60%)' }} />
@@ -1264,59 +1355,74 @@ export function LiveOperations() {
           position: 'absolute', top: 20, right: 20,
           display: 'flex', flexDirection: 'column', gap: 6,
         }}>
-          {VEHICLES.filter(v => ['On Route', 'Loading'].includes(v.status)).map(v => (
+          {trips.map(t => (
             <button
-              key={v.id}
-              onClick={() => setSelectedVehicle(v.id)}
+              key={t.vehicle.registrationNo}
+              onClick={() => setSelectedVehicle(t.vehicle.registrationNo)}
               style={{
-                padding: '6px 12px', background: selectedVehicle === v.id ? C.accentDim : `${C.surface}e0`,
-                border: `1px solid ${selectedVehicle === v.id ? C.accent : C.border}`,
+                padding: '6px 12px', background: selectedVehicle === t.vehicle.registrationNo ? C.accentDim : `${C.surface}e0`,
+                border: `1px solid ${selectedVehicle === t.vehicle.registrationNo ? C.accent : C.border}`,
                 borderRadius: 8, cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center',
                 backdropFilter: 'blur(8px)',
               }}
             >
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor(v.status) }} className={v.status === 'On Route' ? 'pulse-dot' : ''} />
-              <span style={{ fontSize: 12, color: selectedVehicle === v.id ? C.accent : C.text, fontFamily: 'Inter, sans-serif' }}>{v.id}</span>
-              <StatusBadge status={v.status} />
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: t.status === 'COMPLETED' ? C.success : C.accent }} className={t.status === 'IN_TRANSIT' ? 'pulse-dot' : ''} />
+              <span style={{ fontSize: 12, color: selectedVehicle === t.vehicle.registrationNo ? C.accent : C.text, fontFamily: 'Inter, sans-serif' }}>{t.vehicle.registrationNo}</span>
+              <StatusBadge status={t.status} />
             </button>
           ))}
         </div>
       </div>
 
       {/* Vehicle panel */}
-      <div style={{ width: 300, background: C.surface, borderLeft: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+      <div className="w-full lg:w-[300px] shrink-0" style={{ background: C.surface, borderLeft: `1px solid ${C.border}`, borderTop: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
         <div style={{ padding: 20, borderBottom: `1px solid ${C.border}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <Mono color={C.text}>{vehicle.id}</Mono>
-            <StatusBadge status={vehicle.status} />
+            <Mono color={C.text}>{vehicle?.registrationNo || 'No vehicle'}</Mono>
+            {trip && <StatusBadge status={trip.status} />}
           </div>
-          <p style={{ margin: '0 0 4px', fontSize: 12, color: C.text2 }}>Driver: <strong style={{ color: C.text }}>Kasun Perera</strong></p>
-          <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>Trip {trip?.trip} · {trip?.district}</p>
+          <p style={{ margin: '0 0 4px', fontSize: 12, color: C.text2 }}>Driver: <strong style={{ color: C.text }}>Assigned Driver</strong></p>
+          <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>{trip ? `Trip ${trip.tripNumber} · ${trip.district}` : 'Select a trip'}</p>
         </div>
 
         <div style={{ padding: 20, borderBottom: `1px solid ${C.border}` }}>
           <SectionHeader title="Current Stop" />
-          <div style={{
-            padding: '12px 14px', background: C.accentDim, border: `1px solid ${C.accent}30`,
-            borderRadius: 10, marginBottom: 12,
-          }}>
-            <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: C.accent }}>OUT032</p>
-            <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>Waypoint Fresh Gampaha</p>
-          </div>
-          <InfoRow label="Planned arrival" value="06:20" mono />
-          <InfoRow label="Estimated arrival" value="06:42" mono />
-          <InfoRow label="Delay" value={<Badge color={C.warning}>+22 min</Badge>} />
-          <InfoRow label="Window closes" value="07:30" mono />
-          <InfoRow label="Time remaining" value="48 min" mono accent />
+          {currentStop ? (
+            <>
+              <div style={{
+                padding: '12px 14px', background: C.accentDim, border: `1px solid ${C.accent}30`,
+                borderRadius: 10, marginBottom: 12,
+              }}>
+                <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: C.accent }}>{currentStop.outlet.name}</p>
+                <p style={{ margin: 0, fontSize: 12, color: C.text2 }}>{currentStop.orderId}</p>
+              </div>
+              <InfoRow label="Planned arrival" value={hhmm(currentStop.plannedArrival)} mono />
+              <InfoRow
+                label={currentStop.status === 'ARRIVED' ? 'Actual arrival' : 'Estimated arrival'}
+                value={currentStop.status === 'ARRIVED' ? hhmm(currentStop.actualArrival) : hhmm(currentStop.plannedArrival)}
+                mono
+                accent={currentStop.status === 'ARRIVED' ? undefined : true}
+              />
+              <InfoRow label="Window closes" value={currentStop.order.windowClose} mono />
+            </>
+          ) : (
+            <p style={{ margin: 0, fontSize: 13, color: C.text3 }}>{trip?.status === 'COMPLETED' ? 'All stops completed.' : 'No current stop'}</p>
+          )}
         </div>
 
         <div style={{ padding: 20 }}>
           <SectionHeader title="Route Progress" />
-          <Timeline steps={[
-            { label: 'Departed Peliyagoda', time: '04:13', status: 'done', note: 'VEH014 departs' },
-            { label: 'OUT041 — Colombo 3', time: '05:58', status: 'done', note: 'Delivered ORD-10484' },
-            { label: 'OUT032 — Gampaha', time: '06:42 ETA', status: 'active', note: 'ORD-10483, ORD-10527' },
-          ]} />
+          <Timeline steps={
+            trip ? [
+              { label: 'Departed Depot', time: hhmm(trip.plannedDeparture), status: trip.status === 'READY' ? 'pending' : 'done', note: trip.vehicle.registrationNo },
+              ...(trip.stops || []).map((s: any) => ({
+                label: s.outlet.name,
+                time: s.status === 'COMPLETED' ? hhmm(s.leftAt || s.actualArrival) : 'ETA ' + hhmm(s.plannedArrival),
+                status: s.status === 'COMPLETED' ? 'done' : s.status === 'ARRIVED' ? 'active' : 'pending',
+                note: s.status === 'COMPLETED' ? 'Delivered' : s.orderId
+              }))
+            ] : []
+          } />
         </div>
 
         <div style={{ padding: '0 20px 20px' }}>
@@ -1334,7 +1440,7 @@ export function DeliveryException() {
   const { navigate } = useApp();
 
   return (
-    <div style={{ padding: 28, maxWidth: 800 }}>
+    <div className="p-4 md:p-7 max-w-[800px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('dispatcher/live-ops')}><ArrowLeft size={14} /> Live Operations</Btn>
         <ChevronRight size={14} color={C.text3} />
@@ -1353,7 +1459,7 @@ export function DeliveryException() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
         <Card>
           <SectionHeader title="Situation" />
           <InfoRow label="Vehicle" value={<Mono color={C.text}>VEH014</Mono>} />
@@ -1409,14 +1515,14 @@ export function DeliveryException() {
 // ─── D10 — Forecast ───────────────────────────────────────────────────────────
 export function Forecast() {
   return (
-    <div style={{ padding: 28 }}>
+    <div className="p-4 md:p-7">
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Upcoming Demand</h2>
         <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Capacity planning intelligence · Peliyagoda + Kandy</p>
       </div>
 
       {/* Forecast cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 28 }}>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-7">
         {[
           {
             period: 'Next Week', dates: '5–11 Oct 2026',
@@ -1448,7 +1554,7 @@ export function Forecast() {
               </Badge>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3.5">
               {[
                 { label: 'Total volume', value: f.volume.toLocaleString() + ' kg' },
                 { label: 'Chilled vol.', value: f.chilledVol.toLocaleString() + ' kg' },
@@ -1512,7 +1618,7 @@ export function Forecast() {
       </Card>
 
       {/* Intelligence insights */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <AlertCard
           type="warning"
           title="Deepavali peak — action required"

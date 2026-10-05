@@ -1203,23 +1203,7 @@ export function OfflineBanner({ synced }: { synced?: string }) {
   );
 }
 
-// ─── Empty State ──────────────────────────────────────────────────────────────
-export function EmptyState({ icon, title, desc }: { icon?: ReactNode; title: string; desc?: string }) {
-  return (
-    <div style={{ textAlign: 'center', padding: '56px 20px', color: C.text3 }}>
-      {icon && (
-        <div style={{
-          marginBottom: 20, opacity: 0.3,
-          display: 'flex', justifyContent: 'center',
-        }}>
-          {icon}
-        </div>
-      )}
-      <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: C.text2 }}>{title}</p>
-      {desc && <p style={{ margin: '6px 0 0', fontSize: 13, color: C.text3 }}>{desc}</p>}
-    </div>
-  );
-}
+
 
 // ─── Divider ──────────────────────────────────────────────────────────────────
 export function Divider({ style }: { style?: CSSProperties }) {
@@ -1377,3 +1361,34 @@ export function MetricRow({ label, value, color, max }: { label: string; value: 
     </div>
   );
 }
+
+// ─── Loading & Empty States ───────────────────────────────────────────────────
+
+export function Spinner({ size = 24, color = C.accent }: { size?: number; color?: string }) {
+  return (
+    <div
+      className="spin-slow"
+      style={{
+        width: size, height: size,
+        border: `2px solid ${color}30`,
+        borderTopColor: color,
+        borderRadius: '50%',
+        display: 'inline-block'
+      }}
+    />
+  );
+}
+
+export function EmptyState({ icon: Icon, title, desc, action }: { icon: any; title: string; desc: string; action?: ReactNode }) {
+  return (
+    <div style={{ padding: '40px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ width: 48, height: 48, borderRadius: 24, background: C.elevated, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+        <Icon size={24} color={C.text3} />
+      </div>
+      <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 600, color: C.text }}>{title}</h3>
+      <p style={{ margin: '0 0 20px', fontSize: 13, color: C.text2, maxWidth: 300 }}>{desc}</p>
+      {action}
+    </div>
+  );
+}
+export * from './ui/StateComponents';

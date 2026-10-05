@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
+import dayjs from 'dayjs';
 import {
-  CheckCircle, Package, Clock, ChevronRight, ArrowLeft,
+  CheckCircle, Package, Clock, ChevronRight, ArrowLeft, Truck,
   AlertTriangle, ShoppingCart, TrendingUp, Bell, MapPin, Navigation,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import {
   C, Card, Badge, StatusBadge, BrandBadge, TempBadge, Btn,
   InfoRow, Timeline, Divider, Mono, SectionHeader, AlertCard,
-  CapacityBar, Table, TableRow, Label, AnimatedNumber,
+  CapacityBar, Table, TableRow, Label, AnimatedNumber, Spinner, EmptyState,
 } from '../ui';
 import { ordersApi, STATUS_LABEL, TEMP_LABEL, formatDate, type ApiOrder, type ApiOrderDetailed } from '../../services/orders';
 import type { OrderStatus, TempType } from '../../types';
@@ -27,79 +28,162 @@ function useMyOrders() {
 }
 
 function FetchState({ loading, error }: { loading: boolean; error: string }) {
-  if (loading) return <Card style={{ padding: 20 }}><p style={{ margin: 0, fontSize: 13, color: C.text3 }}>Loading orders…</p></Card>;
+  if (loading) return <Card style={{ padding: 40, textAlign: 'center' }}><Spinner size={28} /><p style={{ margin: '12px 0 0', fontSize: 13, color: C.text3 }}>Loading orders…</p></Card>;
   if (error) return <AlertCard type="critical" title="Could not load orders" desc={error} />;
   return null;
+}
+
+const ACTIVE_DELIVERY_STATUSES: ApiOrder['status'][] = ['LOADING', 'IN_TRANSIT', 'DELIVERED'];
+
+/**
+ * The store's live delivery, derived from real API data (TC-8.1): the outlet's
+ * active order plus its trip stop progress and planned arrival.
+ */
+function useActiveDelivery() {
+  const [order, setOrder] = useState<ApiOrderDetailed | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    ordersApi.list()
+      .then((r) => {
+        const active = r.orders.find((o) => ACTIVE_DELIVERY_STATUSES.includes(o.status));
+        if (!active) {
+          if (!cancelled) { setOrder(null); setLoading(false); }
+          return;
+        }
+        return ordersApi.get(active.id).then((detail) => {
+          if (!cancelled) setOrder(detail.order);
+        });
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load the active delivery');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  return { order, loading, error };
 }
 
 // ─── SM01 — Store Home ────────────────────────────────────────────────────────
 export function StoreHome() {
   const { navigate, setSelectedOrder } = useApp();
   const { orders, loading, error } = useMyOrders();
+  const active = useActiveDelivery();
 
   const activeCount = orders.filter((o) => ['NEW', 'CONFIRMED', 'PLANNED', 'LOADING', 'IN_TRANSIT', 'AT_RISK'].includes(o.status)).length;
   const pendingCount = orders.filter((o) => o.status === 'NEW').length;
   const deliveredCount = orders.filter((o) => o.status === 'DELIVERED').length;
+  const atRiskCount = orders.filter((o) => o.status === 'AT_RISK').length;
+
+  const liveOrder = active.order;
+  const liveStops = liveOrder?.tripStops ?? [];
+  const liveDone = liveStops.filter((s) => s.status === 'COMPLETED').length;
+  const liveNextStop = liveStops.find((s) => s.status === 'PENDING' || s.status === 'ARRIVED');
+  const liveEta = liveNextStop?.plannedArrival ?? liveStops[0]?.plannedArrival ?? null;
+  const liveProgress = liveStops.length ? Math.round((liveDone / liveStops.length) * 100) : 0;
+  const liveVehicle = liveOrder?.tripStops?.[0]?.trip?.vehicle?.registrationNo;
 
   return (
-    <div style={{ padding: 28, maxWidth: 900 }}>
+    <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
       {/* Header */}
-      <div style={{
-        marginBottom: 24, padding: '20px 24px',
-        background: 'linear-gradient(135deg, rgba(52,211,153,0.08) 0%, rgba(12,18,32,0.6) 60%)',
-        borderRadius: 16, border: '1px solid rgba(52,211,153,0.15)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        position: 'relative', overflow: 'hidden',
-      }}>
+      <div
+        className="mb-6 p-5 md:p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center relative overflow-hidden gap-4"
+        style={{
+          background: 'linear-gradient(135deg, rgba(52,211,153,0.08) 0%, rgba(12,18,32,0.6) 60%)',
+          border: '1px solid rgba(52,211,153,0.15)',
+        }}
+      >
         <div style={{ position: 'absolute', top: -40, right: -40, width: 200, height: 200, background: 'radial-gradient(circle, rgba(52,211,153,0.10) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div>
           <p style={{ margin: '0 0 4px', fontSize: 10, color: C.fresh, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Store Manager</p>
           <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800, color: C.text, letterSpacing: '-0.025em' }}>Waypoint Fresh — OUT032</h2>
           <p style={{ margin: 0, fontSize: 13, color: C.text3 }}>14 Station Rd, Gampaha · Tuesday, 30 Sep 2026</p>
         </div>
-        <div style={{ textAlign: 'right' }}>
+        <div className="text-left md:text-right">
           <p style={{ margin: 0, fontSize: 10, color: C.text3, textTransform: 'uppercase', letterSpacing: '0.08em' }}>On-time Rate</p>
           <p style={{ margin: '4px 0 0', fontSize: 28, fontWeight: 800, color: C.fresh, fontFamily: 'JetBrains Mono, monospace' }}><AnimatedNumber value={94} />%</p>
         </div>
       </div>
 
-      {/* Delivery status — hero card */}
+      {/* Delivery status — live from the API */}
       <div style={{
         padding: '20px 24px',
         background: 'linear-gradient(135deg, rgba(14,165,233,0.10) 0%, rgba(12,18,32,0.7) 100%)',
         border: `1px solid ${C.accent}30`, borderRadius: 16,
         marginBottom: 20,
       }}>
-        <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: C.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Today's delivery</p>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h3 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 800, color: C.text, letterSpacing: '-0.02em' }}>Arriving at 06:42 AM</h3>
-            <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>VEH014 · Kasun Perera · 25 packages</p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="status-dot active" />
-            <span style={{ fontSize: 13, fontWeight: 700, color: C.accent }}>In Transit</span>
-          </div>
-        </div>
-        <div style={{ marginTop: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontSize: 11, color: C.text3 }}>Route progress</span>
-            <span style={{ fontSize: 11, color: C.accent, fontWeight: 600 }}>70%</span>
-          </div>
-          <div style={{ height: 5, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: '70%', background: `linear-gradient(90deg, ${C.accent}, ${C.success})`, borderRadius: 3, boxShadow: `0 0 8px ${C.accent}50` }} className="progress-fill" />
-          </div>
-          <p style={{ margin: '6px 0 0', fontSize: 11, color: C.text3 }}>Departed 04:13 · 1 of 2 stops completed</p>
-        </div>
+        <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: C.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Current delivery</p>
+
+        {active.loading && (
+          <div className="flex justify-center py-6"><Spinner size={24} /></div>
+        )}
+
+        {!active.loading && active.error && (
+          <AlertCard type="critical" title="Could not load the active delivery" desc={active.error} />
+        )}
+
+        {!active.loading && !active.error && liveOrder && (
+          <>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+              <div>
+                <h3 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 800, color: C.text, letterSpacing: '-0.02em' }}>
+                  {liveEta ? `Arriving at ${dayjs(liveEta).format('HH:mm')}` : 'Arrival time pending'}
+                </h3>
+                <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>
+                  {liveVehicle ?? 'Vehicle pending'} · {liveOrder.units} packages · {liveOrder.id}
+                </p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className={liveOrder.status === 'DELIVERED' ? 'status-dot' : 'status-dot active'} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: liveOrder.status === 'DELIVERED' ? C.success : C.accent }}>
+                  {STATUS_LABEL[liveOrder.status]}
+                </span>
+              </div>
+            </div>
+            {liveStops.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: C.text3 }}>Route progress</span>
+                  <span style={{ fontSize: 11, color: C.accent, fontWeight: 600 }}>{liveProgress}%</span>
+                </div>
+                <div style={{ height: 5, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${liveProgress}%`, background: `linear-gradient(90deg, ${C.accent}, ${C.success})`, borderRadius: 3, boxShadow: `0 0 8px ${C.accent}50` }} className="progress-fill" />
+                </div>
+                <p style={{ margin: '6px 0 0', fontSize: 11, color: C.text3 }}>
+                  {liveDone} of {liveStops.length} stops completed · window {liveOrder.windowOpen}–{liveOrder.windowClose}
+                </p>
+              </div>
+            )}
+            <div style={{ marginTop: 14 }}>
+              <Btn variant="secondary" size="sm" onClick={() => { setSelectedOrder(liveOrder.id); navigate('store/tracking'); }}>
+                Track this delivery
+              </Btn>
+            </div>
+          </>
+        )}
+
+        {!active.loading && !active.error && !liveOrder && (
+          <EmptyState
+            icon={Truck}
+            title="No delivery in progress"
+            desc="Once the dispatcher plans and loads your order it will appear here with live status."
+          />
+        )}
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }} className="stagger-children">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 stagger-children">
         {[
           { label: 'Active orders', value: String(activeCount), color: C.accent, action: () => navigate('store/orders') },
           { label: 'Pending confirm.', value: String(pendingCount), color: C.warning, action: () => navigate('store/orders') },
           { label: 'Delivered', value: String(deliveredCount), color: C.success, action: () => navigate('store/orders') },
-          { label: 'Open issues', value: '0', color: C.text3, action: () => {} },
+          { label: 'Open issues', value: String(atRiskCount), color: atRiskCount > 0 ? C.danger : C.text3, action: () => navigate('store/orders') },
         ].map(s => (
           <div
             key={s.label}
@@ -124,7 +208,7 @@ export function StoreHome() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
         {/* Recent orders */}
         <div>
           <SectionHeader title="Recent Orders" action={
@@ -151,8 +235,8 @@ export function StoreHome() {
                 </Card>
               ))}
               {orders.length === 0 && (
-                <Card style={{ padding: 20 }}>
-                  <p style={{ margin: 0, fontSize: 13, color: C.text3 }}>No orders yet — create your first order.</p>
+                <Card style={{ padding: 0 }}>
+                  <EmptyState icon={Package} title="No orders" desc="No orders yet — create your first order." />
                 </Card>
               )}
             </div>
@@ -210,7 +294,7 @@ export function StoreOrders() {
   });
 
   return (
-    <div style={{ padding: 28, maxWidth: 900 }}>
+    <div className="p-4 md:p-7 max-w-[900px] mx-auto w-full">
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Orders — OUT032</h2>
@@ -261,7 +345,7 @@ export function StoreOrders() {
             ))}
           </Table>
           {storeOrders.length === 0 && (
-            <p style={{ margin: 0, padding: 20, fontSize: 13, color: C.text3 }}>No {filter.toLowerCase()} orders.</p>
+            <EmptyState icon={Package} title="No orders found" desc={`No ${filter.toLowerCase()} orders.`} />
           )}
         </Card>
       )}
@@ -269,11 +353,29 @@ export function StoreOrders() {
   );
 }
 
+/**
+ * Mirrors the API cutoff rule (Mon–Sat operations, 16:00 cutoff) so the form
+ * defaults to a date the server will actually accept instead of a stale literal.
+ */
+function earliestDeliveryDate(now = new Date()): string {
+  const cutoffHour = 16;
+  const next = new Date(now);
+  do {
+    next.setDate(next.getDate() + 1);
+  } while (next.getDay() === 0);
+  if (now.getHours() >= cutoffHour) {
+    do {
+      next.setDate(next.getDate() + 1);
+    } while (next.getDay() === 0);
+  }
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
+}
+
 // ─── SM03 — Create Order ──────────────────────────────────────────────────────
 export function CreateOrder() {
   const { navigate, setOrderDraft } = useApp();
   const [brand, setBrand] = useState('Fresh');
-  const [date, setDate] = useState('2026-10-01');
+  const [date, setDate] = useState(earliestDeliveryDate);
   const [window, setWindow] = useState('05:00–07:30');
   const [temp, setTemp] = useState('Chilled');
   const [weight, setWeight] = useState('');
@@ -284,7 +386,7 @@ export function CreateOrder() {
   const isCutoffPassed = new Date().getHours() >= 16;
 
   return (
-    <div style={{ padding: 28, maxWidth: 720 }}>
+    <div className="p-4 md:p-7 max-w-[720px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('store/home')}><ArrowLeft size={14} /> Store Home</Btn>
         <ChevronRight size={14} color={C.text3} />
@@ -330,7 +432,7 @@ export function CreateOrder() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label style={{ display: 'block', marginBottom: 6, fontSize: 12, fontWeight: 500, color: C.text2 }}>Delivery date <span style={{ color: C.danger }}>*</span></label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} />
@@ -367,7 +469,7 @@ export function CreateOrder() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
           <div>
             <label style={{ display: 'block', marginBottom: 6, fontSize: 12, fontWeight: 500, color: C.text2 }}>Weight (kg) <span style={{ color: C.danger }}>*</span></label>
             <input type="number" value={weight} onChange={e => setWeight(e.target.value)} placeholder="e.g. 200" />
@@ -425,7 +527,7 @@ export function CreateOrder() {
 
 // ─── SM04 — Order Review ──────────────────────────────────────────────────────
 export function OrderReview() {
-  const { navigate, orderDraft, placeOrder } = useApp();
+  const { navigate, orderDraft, placeOrder, showToast } = useApp();
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState('');
 
@@ -441,14 +543,17 @@ export function OrderReview() {
     setError('');
     try {
       await placeOrder(); // POSTs to the API and navigates to the confirmation screen
+      showToast('Order placed successfully!', 'success');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to place order');
+      const msg = e instanceof Error ? e.message : 'Failed to place order';
+      setError(msg);
+      showToast(msg, 'error');
       setPlacing(false);
     }
   };
 
   return (
-    <div style={{ padding: 28, maxWidth: 600 }}>
+    <div className="p-4 md:p-7 max-w-[600px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('store/create-order')}><ArrowLeft size={14} /> Edit order</Btn>
       </div>
@@ -504,7 +609,7 @@ export function OrderConfirmation() {
   const o = lastCreatedOrder;
 
   return (
-    <div style={{ padding: 28, maxWidth: 560 }}>
+    <div className="p-4 md:p-7 max-w-[560px] mx-auto w-full">
       <div style={{ textAlign: 'center', padding: '20px 0 32px' }}>
         <div style={{
           width: 64, height: 64, borderRadius: '50%',
@@ -573,7 +678,7 @@ export function DeliveryTracking() {
 
   if (loading || error || !order) {
     return (
-      <div style={{ padding: 28, maxWidth: 700 }}>
+      <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
           <Btn variant="ghost" size="sm" onClick={() => navigate('store/orders')}><ArrowLeft size={14} /> Orders</Btn>
         </div>
@@ -598,14 +703,14 @@ export function DeliveryTracking() {
   const vehicleReg = stop?.trip?.vehicle?.registrationNo ?? stop?.trip?.vehicleId;
 
   return (
-    <div style={{ padding: 28, maxWidth: 700 }}>
+    <div className="p-4 md:p-7 max-w-[700px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('store/orders')}><ArrowLeft size={14} /> Orders</Btn>
         <ChevronRight size={14} color={C.text3} />
         <Mono color={C.accent}>{order.id}</Mono>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
         <div>
           <Card style={{ marginBottom: 16 }}>
             <SectionHeader title={`Order ${order.id}`} />
@@ -658,21 +763,62 @@ export function DeliveryTracking() {
 
 // ─── SM07 — Delivery Received ─────────────────────────────────────────────────
 export function DeliveryReceived() {
-  const { navigate } = useApp();
+  const { navigate, selectedOrderId, showToast } = useApp();
+  const [order, setOrder] = useState<ApiOrderDetailed | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [qty, setQty] = useState(true);
   const [cond, setCond] = useState('Good');
   const [confirmed, setConfirmed] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
-  if (confirmed) {
+  useEffect(() => {
+    if (!selectedOrderId) {
+      navigate('store/orders');
+      return;
+    }
+    ordersApi.get(selectedOrderId)
+      .then((r) => setOrder(r.order))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load order'))
+      .finally(() => setLoading(false));
+  }, [selectedOrderId, navigate]);
+
+  const handleConfirm = async () => {
+    if (!selectedOrderId) return;
+    try {
+      setConfirming(true);
+      await ordersApi.confirmReceipt(selectedOrderId);
+      setConfirmed(true);
+      showToast('Receipt confirmed', 'success');
+    } catch (e) {
+      console.error(e);
+      showToast(e instanceof Error ? e.message : 'Failed to confirm receipt', 'error');
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  if (loading || error || !order) {
     return (
-      <div style={{ padding: 28, maxWidth: 520, textAlign: 'center' }}>
+      <div className="p-4 md:p-7 max-w-[600px] mx-auto w-full">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <Btn variant="ghost" size="sm" onClick={() => navigate('store/tracking')}><ArrowLeft size={14} /> Tracking</Btn>
+        </div>
+        <FetchState loading={loading} error={error} />
+      </div>
+    );
+  }
+
+  if (confirmed || order.receiptConfirmedAt) {
+    return (
+      <div className="p-4 md:p-7 max-w-[520px] mx-auto w-full" style={{ textAlign: 'center' }}>
         <div style={{ padding: '40px 32px', background: C.card, border: `1px solid ${C.success}30`, borderRadius: 14 }}>
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.successDim, border: `1px solid ${C.success}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <CheckCircle size={26} color={C.success} />
           </div>
           <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 700, color: C.text }}>Delivery received</h2>
-          <p style={{ margin: '0 0 8px', fontSize: 13, color: C.text2 }}>Receipt confirmed for ORD-10483. This has been recorded and the driver and dispatcher have been notified.</p>
-          <p style={{ margin: '0 0 24px', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: C.text3 }}>Received: 06:47 AM, 30 Sep 2026</p>
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: C.text2 }}>Receipt confirmed for {order.id}. This has been recorded and the dispatcher has been notified.</p>
+          <p style={{ margin: '0 0 24px', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: C.text3 }}>Received: {order.receiptConfirmedAt ? fmtTime(order.receiptConfirmedAt) : 'Just now'}</p>
           <Btn variant="secondary" fullWidth onClick={() => navigate('store/home')}>Return to home</Btn>
         </div>
       </div>
@@ -680,23 +826,23 @@ export function DeliveryReceived() {
   }
 
   return (
-    <div style={{ padding: 28, maxWidth: 600 }}>
+    <div className="p-4 md:p-7 max-w-[600px] mx-auto w-full">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <Btn variant="ghost" size="sm" onClick={() => navigate('store/tracking')}><ArrowLeft size={14} /> Tracking</Btn>
       </div>
 
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: C.text }}>Delivery received</h2>
-        <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Confirm receipt of ORD-10483</p>
+        <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Confirm receipt of {order.id}</p>
       </div>
 
       <Card style={{ marginBottom: 16 }}>
         <SectionHeader title="Order Details" />
-        <InfoRow label="Order ID" value={<Mono color={C.accent}>ORD-10483</Mono>} />
-        <InfoRow label="Received time" value="06:47 AM" mono accent />
-        <InfoRow label="Packages" value="14 packages" mono />
-        <InfoRow label="Weight" value="200 kg" mono />
-        <InfoRow label="Temperature" value={<TempBadge temp="Chilled" />} />
+        <InfoRow label="Order ID" value={<Mono color={C.accent}>{order.id}</Mono>} />
+        <InfoRow label="Received time" value={fmtTime(order.tripStops?.[0]?.proofOfDelivery?.recordedAt || new Date().toISOString())} mono accent />
+        <InfoRow label="Packages" value={`${order.units} packages`} mono />
+        <InfoRow label="Weight" value={`${order.weightKg} kg`} mono />
+        <InfoRow label="Temperature" value={<TempBadge temp={TEMP_LABEL[order.temperatureRequirement] as TempType} />} />
       </Card>
 
       <Card style={{ marginBottom: 20 }}>
@@ -715,7 +861,7 @@ export function DeliveryReceived() {
             }}
           >
             {qty ? <CheckCircle size={16} /> : <div style={{ width: 16, height: 16, borderRadius: '50%', border: `1px solid ${C.text3}` }} />}
-            Quantity verified — 14 packages, 200 kg received
+            Quantity verified — {order.units} packages, {order.weightKg} kg received
           </button>
         </div>
 
@@ -738,7 +884,9 @@ export function DeliveryReceived() {
       </Card>
 
       <div style={{ display: 'flex', gap: 10 }}>
-        <Btn variant="primary" size="lg" fullWidth disabled={!qty} onClick={() => setConfirmed(true)}>Confirm receipt</Btn>
+        <Btn variant="primary" size="lg" fullWidth disabled={!qty} loading={confirming} onClick={handleConfirm}>
+          {confirming ? 'Confirming...' : 'Confirm receipt'}
+        </Btn>
         <Btn variant="danger" onClick={() => {}}>Report discrepancy</Btn>
       </div>
     </div>

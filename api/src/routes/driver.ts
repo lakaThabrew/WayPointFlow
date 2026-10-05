@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
-import { getDriverRoute, markStopArrival, completeDelivery, reportIssue } from '../controllers/driverController';
+import { getDriverRoute, markStopArrival, completeDelivery, reportIssue, syncEvents } from '../controllers/driverController';
 
 export const driverRouter = Router();
 
@@ -13,3 +13,4 @@ driverRouter.get('/route', getDriverRoute);
 driverRouter.post('/stops/:stopId/arrive', markStopArrival);
 driverRouter.post('/stops/:stopId/complete', completeDelivery);
 driverRouter.post('/stops/:stopId/issue', reportIssue);
+driverRouter.post('/sync', syncEvents);

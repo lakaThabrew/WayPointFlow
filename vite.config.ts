@@ -1,9 +1,8 @@
 import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import fs from 'node:fs'
 import path from 'node:path'
-
-import siteConfiguration from './.figma/make/site.json' with { type: 'json' }
 
 
 // Vite config — https://vitejs.dev/config/
@@ -20,7 +19,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
 react(),
       tailwindcss(),
-      figmaSiteConfiguration(siteConfiguration),
+      figmaSiteConfiguration(loadSiteConfiguration()),
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
       figmaMakeKitPlugin({ storiesGlob: '/src/**/*.stories.{ts,tsx,js,jsx}' }),
@@ -71,6 +70,32 @@ type FigmaSiteConfiguration = {
   }
   accessibility?: {
     addBypassLinks?: boolean
+  }
+}
+
+/**
+ * Reads the Figma Make site configuration when it is present.
+ *
+ * `.figma/make/site.json` is a generated artifact: it is not committed and does
+ * not exist in a clean clone, in CI, or inside the Docker build context. A
+ * static `import ... with { type: 'json' }` made `vite build` fail outright in
+ * those environments, so it is read defensively instead — every field is
+ * optional and `index.html` fills its head from these values, which means an
+ * empty read would otherwise ship a blank <title>.
+ */
+function loadSiteConfiguration(): FigmaSiteConfiguration {
+  const defaults: FigmaSiteConfiguration = {
+    title: 'WaypointFlow',
+    description: 'Intelligent logistics enterprise — dispatch, loading, delivery and receipt in one flow.',
+    language: 'en',
+    accessibility: { addBypassLinks: true },
+  }
+
+  try {
+    const siteJson = path.resolve(import.meta.dirname, '.figma/make/site.json')
+    return { ...defaults, ...JSON.parse(fs.readFileSync(siteJson, 'utf8')) }
+  } catch {
+    return defaults
   }
 }
 

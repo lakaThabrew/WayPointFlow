@@ -1,9 +1,10 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate as useRouterNavigate } from 'react-router-dom';
 import type { Screen, Role, AppUser } from '../types';
 import { ALERTS } from '../data/mockData';
 import { useAuth, type ApiRole, type AuthUser } from './AuthContext';
 import { ordersApi, type ApiOrder } from '../services/orders';
+import { pendingSyncCount, setForcedOffline, syncOfflineEvents } from '../services/driver';
 
 /** Draft collected on the Create Order screen, carried through Review → Place. */
 export interface OrderDraft {
@@ -15,6 +16,11 @@ export interface OrderDraft {
   volumeM3: string;
   packages: string;
   notes: string;
+}
+export interface ToastMessage {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
 }
 
 interface AppContextType {
@@ -37,6 +43,11 @@ interface AppContextType {
   setSelectedStopId: (id: string | null) => void;
   isOffline: boolean;
   setOffline: (v: boolean) => void;
+  /** Events sitting in the IndexedDB outbox awaiting sync (Phase 7). */
+  pendingSync: number;
+  refreshPendingSync: () => Promise<void>;
+  /** Pushes the outbox to the server; resolves with how many events landed. */
+  runSync: () => Promise<{ processed: number; failed: number; remaining: number; error?: string }>;
   showNotifications: boolean;
   showSearch: boolean;
   showProfile: boolean;
@@ -50,6 +61,9 @@ interface AppContextType {
   lastCreatedOrder: ApiOrder | null;
   /** POSTs the current draft, stores the created order and navigates to the confirmation screen. Throws on API error. */
   placeOrder: () => Promise<ApiOrder>;
+  toasts: ToastMessage[];
+  showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  removeToast: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -145,6 +159,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState(ALERTS);
   const [orderDraft, setOrderDraft] = useState<OrderDraft | null>(null);
   const [lastCreatedOrder, setLastCreatedOrder] = useState<ApiOrder | null>(null);
+  const [pendingSync, setPendingSync] = useState(0);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const refreshPendingSync = useCallback(async () => {
+    setPendingSync(await pendingSyncCount());
+  }, []);
+
+  const runSync = useCallback(async () => {
+    const outcome = await syncOfflineEvents();
+    setPendingSync(outcome.remaining);
+    return outcome;
+  }, []);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const id = Math.random().toString(36).substring(7);
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      removeToast(id);
+    }, 4000);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
 
   const placeOrder = async (): Promise<ApiOrder> => {
     if (!orderDraft) throw new Error('No draft order — start from Create Order');
@@ -204,6 +242,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, screen]);
 
+  useEffect(() => {
+    // AppContext owns the offline flag (browser events + the in-app toggle), so the
+    // driver service has to be told about it or offline actions would still hit the API.
+    setForcedOffline(isOffline);
+  }, [isOffline]);
+
+  useEffect(() => {
+    void refreshPendingSync();
+
+    const handleOnline = () => {
+      setIsOffline(false);
+      void runSync().then(() => refreshPendingSync());
+    };
+    const handleOffline = () => setIsOffline(true);
+
+    setIsOffline(!navigator.onLine);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -213,10 +277,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         selectedTripId, setSelectedTripId,
         selectedStopId, setSelectedStopId,
         isOffline, setOffline: setIsOffline,
+        pendingSync, refreshPendingSync, runSync,
         showNotifications, showSearch, showProfile,
         setShowNotifications, setShowSearch, setShowProfile,
         alerts, markAlertRead,
         orderDraft, setOrderDraft, lastCreatedOrder, placeOrder,
+        toasts, showToast, removeToast,
       }}
     >
       {children}
