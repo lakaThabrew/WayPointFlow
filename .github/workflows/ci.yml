@@ -71,9 +71,8 @@ jobs:
           docker compose up -d
           # Give it 30 seconds for the database and prisma migrations to boot
           sleep 30
-          # Ensure containers are running and not crashing
-          docker ps | grep waypoint-api-1
-          docker ps | grep waypoint-web-1
+          # Display container status for debugging
+          docker compose ps
           # Verify Health endpoints
           curl -f http://localhost:4000/health || exit 1
           docker compose down
