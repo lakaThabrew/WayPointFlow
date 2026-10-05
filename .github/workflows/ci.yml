@@ -1,12 +1,14 @@
-name: CI
+name: CI Build & Test Checker
 
 on:
   push:
     branches:
       - main
+      - lakmana-development
   pull_request:
     branches:
       - main
+      - lakmana-development
 
 jobs:
   build-and-test:
@@ -22,17 +24,15 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      # ---- Frontend ----
+      # ---- Frontend (Web) ----
       - name: Install Frontend Dependencies
         run: npm ci
 
-      # tsc runs first: `vite build` alone strips types without checking them,
-      # so type errors would otherwise reach main unnoticed.
       - name: Typecheck Frontend
         run: npm run typecheck
-
+        
       - name: Build Frontend
-        run: npx vite build
+        run: npm run build
 
       - name: Run Frontend Tests
         run: npm test --if-present
@@ -53,3 +53,27 @@ jobs:
       - name: Run API Tests
         working-directory: ./api
         run: npm test --if-present
+
+  docker-build-checker:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Docker Compose Build
+        run: |
+          docker compose build
+          
+      - name: Verify API Container Boots
+        run: |
+          docker compose up -d
+          # Give it 30 seconds for the database and prisma migrations to boot
+          sleep 30
+          # Ensure containers are running and not crashing
+          docker ps | grep waypoint-api-1
+          docker ps | grep waypoint-web-1
+          # Verify Health endpoints
+          curl -f http://localhost:4000/health || exit 1
+          docker compose down
