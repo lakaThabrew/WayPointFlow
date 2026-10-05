@@ -5,3 +5,7 @@ dist
 api
 docker-compose.yml
 .env
+docs
+Plans
+*.md
+.mise.toml

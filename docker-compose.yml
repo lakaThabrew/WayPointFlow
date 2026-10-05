@@ -28,14 +28,21 @@ services:
       JWT_SECRET: change-in-production
     ports:
       - "4000:4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s   # first boot runs migrations + seed before the API answers
     command: >
-      sh -c "npx prisma migrate deploy && node dist/prisma/seed.js && node dist/src/index.js"
+      sh -c "npm run db:migrate:deploy && node dist/prisma/seed.js && node dist/src/index.js"
 
   web:
     build: .
     restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy   # nginx resolves "api" at config load, so wait for it
     ports:
       - "8080:80"
 
